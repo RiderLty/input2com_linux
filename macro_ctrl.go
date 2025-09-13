@@ -26,7 +26,7 @@ func clamp(value, min, max int32) int32 {
 }
 
 func configInit() {
-	mouseConfigDict[MouseBtnLeft] = "K437_downdrag"
+	// mouseConfigDict[MouseBtnLeft] = "K437_downdrag"
 	mouseConfigDict[MouseBtnForward] = "btn_left"
 }
 

@@ -223,6 +223,27 @@ func main() {
 		Help:     "串口设备路径，可以使用通配符来匹配第一个设备",
 	})
 
+	var sbDesc = parser.String("", "sbdesc", &argparse.Options{
+		Required: false,
+		Default:  "",
+		Help:     "自定义设备描述符",
+	})
+	var csDesc = parser.String("", "csdesc", &argparse.Options{
+		Required: false,
+		Default:  "",
+		Help:     "自定义厂商描述符",
+	})
+	var cpDesc = parser.String("", "cpdesc", &argparse.Options{
+		Required: false,
+		Default:  "",
+		Help:     "自定义产品描述符",
+	})
+	var xlDesc = parser.String("", "xldesc", &argparse.Options{
+		Required: false,
+		Default:  "",
+		Help:     "自定义序列号描述符",
+	})
+
 	go serve() //启动配置服务器
 
 	err := parser.Parse(os.Args)
@@ -249,7 +270,7 @@ func main() {
 
 	eventsCh := make(chan *eventPack) //主要设备事件管道
 	go autoDetectAndRead(eventsCh)
-	comKB := NewComMouseKeyboard(devpath, *badurate)
+	comKB := NewComMouseKeyboard(devpath, *badurate, *sbDesc, *csDesc, *cpDesc, *xlDesc)
 	macroKB := NewMacroMouseKeyboard(comKB)
 
 	handelRelEvent := func(x, y, HWhell, Wheel int32) {

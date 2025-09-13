@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"sync"
 
 	"go.bug.st/serial"
@@ -35,7 +36,18 @@ type comMouseKeyboard struct {
 	mu              sync.Mutex
 }
 
-func NewComMouseKeyboard(portName string, baudRate int) *comMouseKeyboard {
+func string2bytes(s string) []byte {
+	var buf bytes.Buffer
+	for _, r := range s {
+		if r > 127 {
+			logger.Warnf("Warn: Skipping non-ASCII character %U", r)
+			continue
+		}
+		buf.WriteByte(byte(r))
+	}
+	return buf.Bytes()
+}
+func NewComMouseKeyboard(portName string, baudRate int, sbDesc string, csDesc string, cpDesc string, xlDesc string) *comMouseKeyboard {
 	port, err := OpenSerialWritePipe(portName, baudRate)
 	if err != nil {
 		logger.Error("Failed to open serial port")
@@ -43,6 +55,78 @@ func NewComMouseKeyboard(portName string, baudRate int) *comMouseKeyboard {
 	}
 	port.Write([]byte{0x57, 0xAB, 0x02, 0x00, 0x00, 0x00, 0x00})
 	port.Write([]byte{0x57, 0xAB, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+
+	port.Write([]byte{0x57, 0xAB, 0x50})
+	resp := make([]byte, 21)
+	port.Read(resp)
+	logger.Infof("设备描述符: %v", resp[3:])
+
+	resp = make([]byte, 1024)
+	port.Write([]byte{0x57, 0xAB, 0x51})
+	port.Read(resp)
+	logger.Infof("厂商描述符:%s", resp[3:resp[3]+4])
+	resp = make([]byte, 1024)
+	port.Write([]byte{0x57, 0xAB, 0x52})
+	port.Read(resp)
+	logger.Infof("产品描述符:%s", resp[3:resp[3]+4])
+
+	resp = make([]byte, 1024)
+	port.Write([]byte{0x57, 0xAB, 0x53})
+	port.Read(resp)
+	logger.Infof("序列号描述符:%s", resp[3:resp[3]+4])
+
+	if sbDesc != "" {
+		wb := string2bytes(sbDesc)
+		if len(wb) > 18 {
+			logger.Warn("设备描述符不得超过20字节")
+		} else {
+			if len(wb) < 18 { //用0填充到18字节
+				padding := make([]byte, 18-len(wb))
+				wb = append(wb, padding...)
+			}
+			descCmd := append([]byte{0x57, 0xAB, 0x54}, wb...)
+			port.Write(descCmd)
+			port.Read(resp) //57CDA0
+		}
+	}
+
+	if csDesc != "" {
+		wb := string2bytes(csDesc)
+		if len(wb) > 40 {
+			logger.Warn("厂商描述符不得超过40字节")
+		} else {
+			descCmd := append([]byte{0x57, 0xAB, 0xA1, byte(len(wb))}, wb...)
+			port.Write(descCmd)
+			port.Read(resp) //57CDA01
+		}
+	}
+
+	if cpDesc != "" {
+		wb := string2bytes(cpDesc)
+		if len(wb) > 40 {
+			logger.Warn("产品描述符不得超过40字节")
+		} else {
+			descCmd := append([]byte{0x57, 0xAB, 0xA2, byte(len(wb))}, wb...)
+			port.Write(descCmd)
+			port.Read(resp) //57CDA01
+		}
+	}
+
+	if xlDesc != "" {
+		wb := string2bytes(xlDesc)
+		if len(wb) > 40 {
+			logger.Warn("序列号描述符不得超过40字节")
+		} else {
+			descCmd := append([]byte{0x57, 0xAB, 0xA3, byte(len(wb))}, wb...)
+			port.Write(descCmd)
+			port.Read(resp) //57CDA01
+		}
+	}
+
+	if sbDesc != "" || csDesc != "" || cpDesc != "" || xlDesc != "" {
+		port.Write([]byte{0x57, 0xAB, 0xAA})
+	}
+
 	return &comMouseKeyboard{port: port, mouseButtonByte: 0x00, keyBytes: []byte{0x57, 0xAB, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}}
 }
 
@@ -53,6 +137,9 @@ func (mk *comMouseKeyboard) MouseMove(dx, dy, Wheel int32) error {
 	if err != nil {
 		return err
 	}
+	// reportReturn := make([]byte, 3)
+	// _, err = mk.port.Read(reportReturn)
+	// logger.Debug("MouseMove report:", reportReturn)
 	return nil
 }
 
@@ -61,6 +148,7 @@ func (mk *comMouseKeyboard) MouseBtnDown(keyCode byte) error {
 	defer mk.mu.Unlock()
 	mk.mouseButtonByte |= keyCode
 	_, err := mk.port.Write([]byte{0x57, 0xAB, 0x02, mk.mouseButtonByte, 0x00, 0x00, 0x00})
+
 	if err != nil {
 		return err
 	}
