@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"syscall"
 	"time"
@@ -165,7 +166,7 @@ func getDevNameByIndex(index int) string {
 	return d.Name()
 }
 
-func autoDetectAndRead(eventChan chan *eventPack) {
+func autoDetectAndRead(eventChan chan *eventPack, patern string) {
 	//自动检测设备并读取 循环检测 自动管理设备插入移除
 	devices := make(map[int]bool)
 	for {
@@ -186,14 +187,22 @@ func autoDetectAndRead(eventChan chan *eventPack) {
 				if devName == "input2com-virtual-device" {
 					continue //跳过生成的虚拟设备
 				}
+				re := regexp.MustCompile(patern)
+				if !re.MatchString(devName) {
+					logger.Debugf("设备名称 %s 不匹配模式 %s", devName, patern)
+					continue
+				}
+
 				if devType == typeMouse || devType == typeKeyboard || devType == typeJoystick {
 					logger.Infof("检测到设备 %s(/dev/input/event%d) : %s", devName, index, devTypeFriendlyName[devType])
+
 					localIndex := index
 					go func() {
 						devices[localIndex] = true
 						devReader(eventChan, localIndex)
 						devices[localIndex] = false
 					}()
+
 				}
 			}
 			time.Sleep(time.Duration(400) * time.Millisecond)
@@ -244,6 +253,12 @@ func main() {
 		Help:     "自定义序列号描述符",
 	})
 
+	var patern = parser.String("p", "pattern", &argparse.Options{
+		Required: false,
+		Default:  ".*",
+		Help:     "捕获设备名称的通配符模式",
+	})
+
 	go serve() //启动配置服务器
 
 	err := parser.Parse(os.Args)
@@ -269,7 +284,7 @@ func main() {
 	logger.Infof("波特率: %d", *badurate)
 
 	eventsCh := make(chan *eventPack) //主要设备事件管道
-	go autoDetectAndRead(eventsCh)
+	go autoDetectAndRead(eventsCh, *patern)
 	comKB := NewComMouseKeyboard(devpath, *badurate, *sbDesc, *csDesc, *cpDesc, *xlDesc)
 	macroKB := NewMacroMouseKeyboard(comKB)
 

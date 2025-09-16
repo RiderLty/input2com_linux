@@ -59,7 +59,7 @@ func NewComMouseKeyboard(portName string, baudRate int, sbDesc string, csDesc st
 	port.Write([]byte{0x57, 0xAB, 0x50})
 	resp := make([]byte, 21)
 	port.Read(resp)
-	logger.Infof("设备描述符: %v", resp[3:])
+	logger.Infof("设备描述符: %v", resp)
 
 	resp = make([]byte, 1024)
 	port.Write([]byte{0x57, 0xAB, 0x51})
@@ -76,7 +76,7 @@ func NewComMouseKeyboard(portName string, baudRate int, sbDesc string, csDesc st
 	logger.Infof("序列号描述符:%s", resp[3:resp[3]+4])
 
 	if sbDesc != "" {
-		wb := string2bytes(sbDesc)
+		wb := []byte{0x12, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x40, 0x6D, 0x04, 0x90, 0xC0, 0x02, 0x22, 0x01, 0x02, 0x03, 0x01} //
 		if len(wb) > 18 {
 			logger.Warn("设备描述符不得超过20字节")
 		} else {
@@ -84,9 +84,10 @@ func NewComMouseKeyboard(portName string, baudRate int, sbDesc string, csDesc st
 				padding := make([]byte, 18-len(wb))
 				wb = append(wb, padding...)
 			}
-			descCmd := append([]byte{0x57, 0xAB, 0x54}, wb...)
+			descCmd := append([]byte{0x57, 0xAB, 0xA0}, wb...)
 			port.Write(descCmd)
 			port.Read(resp) //57CDA0
+			logger.Infof("设置设备描述符: %v", descCmd)
 		}
 	}
 
