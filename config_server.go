@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"strconv"
@@ -19,7 +20,8 @@ var (
 	keyboarddictMutex  sync.RWMutex
 )
 
-func serve() {
+func serve(port int) {
+	logger.Infof(fmt.Sprintf("Starting config server on port %d", port))
 	webFS, err := fs.Sub(staticFS, "server/build")
 	if err != nil {
 		logger.Errorf("无法加载静态文件: %v", err)
@@ -130,5 +132,6 @@ func serve() {
 
 	})
 
-	http.ListenAndServe(":9264", nil)
+	logger.Infof("Config server started ")
+	http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 }

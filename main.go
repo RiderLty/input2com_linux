@@ -166,7 +166,7 @@ func getDevNameByIndex(index int) string {
 	return d.Name()
 }
 
-func autoDetectAndRead(eventChan chan *eventPack, patern string) {
+func autoDetectAndRead(eventChan chan *eventPack, patern string, loop bool) {
 	//自动检测设备并读取 循环检测 自动管理设备插入移除
 	devices := make(map[int]bool)
 	for {
@@ -205,6 +205,9 @@ func autoDetectAndRead(eventChan chan *eventPack, patern string) {
 
 				}
 			}
+			if !loop {
+				return
+			}
 			time.Sleep(time.Duration(400) * time.Millisecond)
 		}
 	}
@@ -218,6 +221,12 @@ func main() {
 		Required: false,
 		Default:  false,
 		Help:     "调试模式",
+	})
+
+	var auto_detect = parser.Flag("a", "auto-detect", &argparse.Options{
+		Required: false,
+		Default:  false,
+		Help:     "关闭自动检测设备 默认开启",
 	})
 
 	var badurate = parser.Int("b", "badurate", &argparse.Options{
@@ -253,19 +262,25 @@ func main() {
 		Help:     "自定义序列号描述符",
 	})
 
-	var patern = parser.String("p", "pattern", &argparse.Options{
+	var patern = parser.String("", "pattern", &argparse.Options{
 		Required: false,
 		Default:  ".*",
 		Help:     "捕获设备名称的通配符模式",
 	})
 
-	go serve() //启动配置服务器
+	var port = parser.Int("p", "port", &argparse.Options{
+		Required: false,
+		Help:     "端口",
+		Default:  9264,
+	})
 
 	err := parser.Parse(os.Args)
 	if err != nil {
 		fmt.Print(parser.Usage(err))
 		os.Exit(1)
 	}
+
+	go serve(*port) //启动配置服务器
 
 	if *debug {
 		logger.WithDebug()
@@ -284,7 +299,13 @@ func main() {
 	logger.Infof("波特率: %d", *badurate)
 
 	eventsCh := make(chan *eventPack) //主要设备事件管道
-	go autoDetectAndRead(eventsCh, *patern)
+	if !*auto_detect {
+		logger.Info("自动检测模式 已开启")
+		go autoDetectAndRead(eventsCh, *patern, true)
+	} else {
+		logger.Info("自动检测模式 已关闭")
+		go autoDetectAndRead(eventsCh, *patern, false)
+	}
 	comKB := NewComMouseKeyboard(devpath, *badurate, *sbDesc, *csDesc, *cpDesc, *xlDesc)
 	macroKB := NewMacroMouseKeyboard(comKB)
 
