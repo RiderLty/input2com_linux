@@ -72,7 +72,7 @@ func serve(port int) {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("ok"))
 		} else {
-			if _, ok := mouseValidKeys[key]; !ok {
+			if _, ok := MouseValidKeys[key]; !ok {
 				http.Error(w, "Invalid key", http.StatusBadRequest)
 				return
 			}
@@ -107,7 +107,7 @@ func serve(port int) {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("ok"))
 		} else {
-			if _, ok := keyboardValidKeys[key]; !ok {
+			if _, ok := KeyboardValidKeys[key]; !ok {
 				http.Error(w, "Invalid key", http.StatusBadRequest)
 				return
 			}

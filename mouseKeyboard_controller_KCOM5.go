@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"sync"
+	"time"
 
 	"go.bug.st/serial"
 )
@@ -47,7 +48,26 @@ func string2bytes(s string) []byte {
 	}
 	return buf.Bytes()
 }
-func NewComMouseKeyboard(portName string, baudRate int, sbDesc string, csDesc string, cpDesc string, xlDesc string) *comMouseKeyboard {
+
+func clamp(value, min, max int32) int32 {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
+}
+
+func NewMouseKeyboard_KCOM5(portName string, baudRate int, sbDesc string, csDesc string, cpDesc string, xlDesc string) *comMouseKeyboard {
+	//初始化KCOM5鼠标键盘
+	// portName: 串口端口名
+	// baudRate: 波特率
+	// sbDesc: 设备描述符
+	// csDesc: 厂商描述符
+	// cpDesc: 产品描述符
+	// xlDesc: 序列号描述符
+	// 如果描述符为空 则不设置
 	port, err := OpenSerialWritePipe(portName, baudRate)
 	if err != nil {
 		logger.Error("Failed to open serial port")
@@ -134,13 +154,27 @@ func NewComMouseKeyboard(portName string, baudRate int, sbDesc string, csDesc st
 func (mk *comMouseKeyboard) MouseMove(dx, dy, Wheel int32) error {
 	mk.mu.Lock()
 	defer mk.mu.Unlock()
-	_, err := mk.port.Write([]byte{0x57, 0xAB, 0x02, mk.mouseButtonByte, intToByte(dx), intToByte(dy), intToByte(Wheel)})
-	if err != nil {
-		return err
+
+	counter := 0
+	for dx != 0 || dy != 0 || Wheel != 0 {
+		if counter != 0 {
+			time.Sleep(time.Duration(1) * time.Millisecond)
+		}
+		stepDx := clamp(dx, -127, 127)
+		stepDy := clamp(dy, -127, 127)
+		stepWheel := clamp(Wheel, -127, 127)
+		_, err := mk.port.Write([]byte{0x57, 0xAB, 0x02, mk.mouseButtonByte, intToByte(stepDx), intToByte(stepDy), intToByte(stepWheel)})
+		if err != nil {
+			return err
+		}
+		dx -= stepDx
+		dy -= stepDy
+		Wheel -= stepWheel
+		counter++
 	}
-	// reportReturn := make([]byte, 3)
-	// _, err = mk.port.Read(reportReturn)
-	// logger.Debug("MouseMove report:", reportReturn)
+	if counter != 1 {
+		time.Sleep(time.Duration(1) * time.Millisecond)
+	}
 	return nil
 }
 
@@ -171,7 +205,7 @@ func (mk *comMouseKeyboard) KeyDown(keyCode byte) error {
 	mk.mu.Lock()
 	defer mk.mu.Unlock()
 	if keyCode >= KeyLeftCtrl && keyCode <= KeyRightGui {
-		mk.keyBytes[3] |= specialKeysMap[keyCode]
+		mk.keyBytes[3] |= SpecialKeysMap[keyCode]
 	} else {
 		for i := 0; i < 7; i++ {
 			if i == 6 {
@@ -194,7 +228,7 @@ func (mk *comMouseKeyboard) KeyUp(keyCode byte) error {
 	mk.mu.Lock()
 	defer mk.mu.Unlock()
 	if keyCode >= KeyLeftCtrl && keyCode <= KeyRightGui {
-		mk.keyBytes[3] &^= specialKeysMap[keyCode]
+		mk.keyBytes[3] &^= SpecialKeysMap[keyCode]
 	} else {
 		for i := 0; i < 7; i++ {
 			if i == 6 {

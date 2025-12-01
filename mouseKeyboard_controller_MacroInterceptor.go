@@ -1,33 +1,49 @@
 package main
 
+// 宏拦截器，实现了键盘鼠标接口类，接收另一个键盘鼠标接口作为控制器
+// 实现无感的替换动作与控制
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
+var global_moved_x int64 = 0
+var global_moved_y int64 = 0
+
 type macroMouseKeyboard struct {
 	mouseBtnArgs map[byte]chan bool
 	keyArgs      map[byte]chan bool
-	ctrl         *comMouseKeyboard
+	ctrl         mouseKeyboard
 	macros       map[string]macro // 存储宏函数
 }
 
-func clamp(value, min, max int32) int32 {
-	if value < min {
-		return min
+func abs(x int32) int32 {
+	if x < 0 {
+		return x * -1
+	} else {
+		return x
 	}
-	if value > max {
-		return max
-	}
-	return value
 }
 
 func configInit() {
-	// mouseConfigDict[MouseBtnLeft] = "K437_downdrag"
+	// // mouseConfigDict[MouseBtnLeft] = "K437_downdrag"
+	// mouseConfigDict[MouseBtnLeft] = "ai_triger"
+	// mouseConfigDict[MouseBtnForward] = "btn_left"
+
+	mouseConfigDict[MouseBtnBack] = "ai_triger_auto"
+	mouseConfigDict[MouseBtnLeft] = "ai_triger_MOUSE_LEFT"
 	mouseConfigDict[MouseBtnForward] = "btn_left"
+
+	// mouseConfigDict[MouseBtnBack] = "ai_triger_juji_auto"
+
+	// mouseConfigDict[MouseBtnBack] = "test_ai_speed"
+	// mouseConfigDict[MouseBtnBack] = "K437_downdrag"
+
+	// mouseConfigDict[MouseBtnMiddle] = "test_move_from_file"
 }
 
 type macro struct {
@@ -38,7 +54,18 @@ type macro struct {
 
 var macros = make(map[string]macro)
 
+var drop_move = false
+
 //===========================================================================================================
+//529px  1315dot
+
+func (mk *macroMouseKeyboard) move_once_auto() {
+	//0 1 2 3
+	move_x := udp_ints[0] * 1315 / 529
+	move_y := udp_ints[1] * 1315 / 529
+	mk.MouseMove(move_x, move_y, 0)
+	logger.Errorf("auto move %v,%v", move_x, move_y)
+}
 
 func downDragMacroFactory(path string) func(mk *macroMouseKeyboard, ch chan bool) {
 	file, err := os.Open(path)
@@ -92,7 +119,7 @@ func downDragMacroFactory(path string) func(mk *macroMouseKeyboard, ch chan bool
 	}
 }
 
-func NewMacroMouseKeyboard(controler *comMouseKeyboard) *macroMouseKeyboard {
+func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeyboard {
 	configInit()
 	mouseBtnArgs := make(map[byte]chan bool)
 	keyArgs := make(map[byte]chan bool)
@@ -252,6 +279,168 @@ func NewMacroMouseKeyboard(controler *comMouseKeyboard) *macroMouseKeyboard {
 		},
 	}
 
+	macros["ai_triger"] = macro{
+		Name:        "AI扳机",
+		Description: "AI自动扳机",
+		fn: func(mk *macroMouseKeyboard, ch chan bool) {
+			mk.ctrl.MouseBtnDown(MouseBtnLeft)
+			counter := 0
+			for {
+				select {
+				case <-ch:
+					mk.ctrl.MouseBtnUp(MouseBtnLeft)
+					return
+				default:
+					counter += 1
+					time.Sleep(time.Duration(1) * time.Millisecond)
+					if counter > 420 && udp_ints[2] != 0 && udp_ints[3] != 0 && float64(abs(udp_ints[0]))/float64(udp_ints[2]) < 0.5 && float64(abs(udp_ints[1]))/float64(udp_ints[3]) < 0.5 {
+						counter = 0
+						mk.ctrl.MouseBtnUp(MouseBtnLeft)
+						time.Sleep(time.Duration(16) * time.Millisecond)
+						mk.ctrl.MouseBtnDown(MouseBtnLeft)
+						logger.Warnf("%v (%v)", udp_ints, udp_last)
+					}
+				}
+
+			}
+
+		},
+	}
+
+	macros["test_ai_speed"] = macro{
+		Name:        "AI扳机测试速度",
+		Description: "点击左键一次，然后当识别变化时显示时间差",
+		fn: func(mk *macroMouseKeyboard, ch chan bool) {
+			mk.ctrl.MouseBtnDown(MouseBtnLeft)
+			old_res := fmt.Sprintf("%v", udp_ints)
+			start := time.Now().UnixMicro()
+			logger.Warnf("当前值%v", old_res)
+			for {
+				if old_res != fmt.Sprintf("%v", udp_ints) {
+					end := time.Now().UnixMicro()
+					logger.Errorf("used %v ms", (end-start)/1000)
+					logger.Warnf("变化为 %v (%v)", udp_ints, udp_last)
+					break
+				}
+			}
+			time.Sleep(time.Duration(100) * time.Millisecond)
+			<-ch
+			mk.ctrl.MouseBtnUp(MouseBtnLeft)
+		},
+	}
+
+	runningFlag := false
+	switchFlasg := make(chan bool)
+	releaseFlag := make(chan bool)
+
+	macros["ai_triger_auto"] = macro{
+		Name:        "AI扳机全自动",
+		Description: "AI自动扳机_弓箭侧键特调_搭配释放使用",
+		fn: func(mk *macroMouseKeyboard, ch chan bool) {
+			if !runningFlag {
+				runningFlag = true
+				mk.ctrl.MouseBtnDown(MouseBtnLeft)
+				logger.Warn("开始长按左键")
+				counter := 0
+				for {
+					select {
+					case <-ch:
+					case <-switchFlasg:
+						mk.ctrl.MouseBtnUp(MouseBtnLeft)
+						return
+					case <-releaseFlag:
+						counter = 0
+						drop_move = true
+						// mk.move_once_auto()
+						time.Sleep(time.Duration(3) * time.Millisecond)
+						mk.ctrl.MouseBtnUp(MouseBtnLeft)
+						drop_move = false
+						time.Sleep(time.Duration(16) * time.Millisecond)
+						mk.ctrl.MouseBtnDown(MouseBtnLeft)
+						logger.Warnf("用户发射")
+					default:
+						counter += 1
+						time.Sleep(time.Duration(1) * time.Millisecond)
+						if counter > 420 && udp_ints[2] != 0 && udp_ints[3] != 0 && float64(abs(udp_ints[0]))/float64(udp_ints[2]) < 0.9 && float64(abs(udp_ints[1]))/float64(udp_ints[3]) < 0.9 {
+							counter = 0
+							drop_move = true
+							mk.move_once_auto()
+							mk.ctrl.MouseBtnUp(MouseBtnLeft)
+							drop_move = false
+							time.Sleep(time.Duration(16) * time.Millisecond)
+							mk.ctrl.MouseBtnDown(MouseBtnLeft)
+							logger.Warnf("%v (%v)", udp_ints, udp_last)
+						}
+					}
+
+				}
+
+			} else {
+				logger.Warnf("停止长按左键")
+				runningFlag = false
+				switchFlasg <- false
+			}
+
+		},
+	}
+
+	macros["ai_triger_MOUSE_LEFT"] = macro{
+		Name:        "AI扳机全自动释放",
+		Description: "AI自动扳机_释放",
+		fn: func(mk *macroMouseKeyboard, ch chan bool) {
+			if runningFlag {
+				releaseFlag <- false
+			}
+			<-ch
+		},
+	}
+
+	macros["ai_triger_juji_auto"] = macro{
+		Name:        "AI扳机全自动_狙击枪_开关版",
+		Description: "AI自动扳机_狙击枪_开关版",
+		fn: func(mk *macroMouseKeyboard, ch chan bool) {
+			if !runningFlag {
+				runningFlag = true
+				counter := 0
+				for {
+					select {
+					case <-ch:
+					case <-switchFlasg:
+						return
+					case <-releaseFlag:
+					default:
+						counter += 1
+						time.Sleep(time.Duration(1) * time.Millisecond)
+						if counter > 300 && udp_ints[2] != 0 && udp_ints[3] != 0 && float64(abs(udp_ints[0]))/float64(udp_ints[2]) < 0.5 && float64(abs(udp_ints[1]))/float64(udp_ints[3]) < 0.5 {
+							counter = 0
+							mk.ctrl.MouseBtnDown(MouseBtnLeft)
+							time.Sleep(time.Duration(16) * time.Millisecond)
+							mk.ctrl.MouseBtnUp(MouseBtnLeft)
+							logger.Warnf("%v (%v)", udp_ints, udp_last)
+						}
+					}
+
+				}
+
+			} else {
+				runningFlag = false
+				switchFlasg <- false
+			}
+
+		},
+	}
+
+	macros["test_move_from_file"] = macro{
+		Name:        "测试移动",
+		Description: "测试移动",
+		fn: func(mk *macroMouseKeyboard, ch chan bool) {
+			global_moved_x = 0
+			global_moved_y = 0
+			<-ch
+			logger.Errorf("moved(%v,%v)", global_moved_x, global_moved_y)
+		},
+	}
+
 	return &macroMouseKeyboard{
 		mouseBtnArgs: mouseBtnArgs,
 		keyArgs:      keyArgs,
@@ -262,19 +451,11 @@ func NewMacroMouseKeyboard(controler *comMouseKeyboard) *macroMouseKeyboard {
 }
 
 func (mk *macroMouseKeyboard) MouseMove(dx, dy, Wheel int32) error {
-	// 分别处理 dx, dy, Wheel 的拆分移动
-	for dx != 0 || dy != 0 || Wheel != 0 {
-		stepDx := clamp(dx, -128, 127)
-		stepDy := clamp(dy, -128, 127)
-		stepWheel := clamp(Wheel, -128, 127)
-		if err := mk.ctrl.MouseMove(stepDx, stepDy, stepWheel); err != nil {
-			return err
-		}
-		dx -= stepDx
-		dy -= stepDy
-		Wheel -= stepWheel
+	if err := mk.ctrl.MouseMove(dx, dy, Wheel); err != nil {
+		return err
 	}
 	return nil
+
 }
 func (mk *macroMouseKeyboard) MouseBtnDown(keyCode byte) error {
 	value, ok := mouseConfigDict[keyCode]
@@ -302,10 +483,10 @@ func (mk *macroMouseKeyboard) MouseBtnUp(keyCode byte) error {
 	}
 }
 
-func (mk *macroMouseKeyboard) KeyDown(keyCode uint16) error {
-	return mk.ctrl.KeyDown(linux2hid[keyCode])
+func (mk *macroMouseKeyboard) KeyDown(keyCode byte) error {
+	return mk.ctrl.KeyDown(Linux2hid[keyCode])
 }
 
-func (mk *macroMouseKeyboard) KeyUp(keyCode uint16) error {
-	return mk.ctrl.KeyUp(linux2hid[keyCode])
+func (mk *macroMouseKeyboard) KeyUp(keyCode byte) error {
+	return mk.ctrl.KeyUp(Linux2hid[keyCode])
 }
