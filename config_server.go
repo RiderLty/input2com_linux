@@ -16,6 +16,7 @@ var staticFS embed.FS
 var (
 	mouseConfigDict    = make(map[byte]string)
 	keyboardConfigDict = make(map[byte]string)
+	preConfigDict      = make(map[string][2]map[byte]string)
 	mousedictMutex     sync.RWMutex
 	keyboarddictMutex  sync.RWMutex
 )
@@ -38,9 +39,14 @@ func serve(port int) {
 		}
 	})
 
-	//   := map[string]bool{
-	// 	"0": true,
-	// }
+	http.HandleFunc("/api/get/preConfig", func(w http.ResponseWriter, r *http.Request) {
+		mousedictMutex.RLock()
+		defer mousedictMutex.RUnlock()
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(preConfigDict); err != nil {
+			http.Error(w, "Failed to encode preConfig", http.StatusInternalServerError)
+		}
+	})
 
 	http.HandleFunc("/api/get/mouse", func(w http.ResponseWriter, r *http.Request) {
 		//return josn mouseConfigDict

@@ -7,11 +7,12 @@ import './App.css';
 import KeyContainer from './components/keyContainer';
 import MouseContainer from "./components/mouseContainer"
 import MacroPanel from './components/macroPanel';
+import PreConfigPanel from './components/preConfigPanel';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import LongClickMenu from './components/LongClickMenu';
 import CenterFocusWeakIcon from '@material-ui/icons/CenterFocusWeak';
-import { useKeyboardConfig, useMacros, useMouseConfig } from './components/goApi';
+import { useKeyboardConfig, useMacros, useMouseConfig,usePreConfig } from './components/goApi';
 import ClearAllIcon from '@material-ui/icons/ClearAll';
 
 
@@ -514,6 +515,7 @@ function App() {
   ])
   const [longClickedName, setLongClickedName] = useState("")//弹出的标题
   const macros = useMacros()
+  const preConfig = usePreConfig()
   const [mouseConfig, setMouseConfig] = useMouseConfig()
   const [keyboardConfig, setKeyboardConfig] = useKeyboardConfig()
 
@@ -582,6 +584,16 @@ function App() {
             >
               <MouseContainer setMouseConfig={setMouseConfig} onMouseClick={onMouseClick} />
               <MacroPanel macros={macros} />
+            </Grid>
+            <Grid
+              item
+              container
+              direction="row"
+              justifyContent="center"
+              alignItems="center"
+              xs={12}
+            >
+              <PreConfigPanel preConfig={preConfig}  />
             </Grid>
             <Grid item xs={12} style={{
               width: "100%"

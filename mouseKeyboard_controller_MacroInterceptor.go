@@ -34,9 +34,9 @@ func configInit() {
 	// mouseConfigDict[MouseBtnLeft] = "ai_triger"
 	// mouseConfigDict[MouseBtnForward] = "btn_left"
 
-	mouseConfigDict[MouseBtnBack] = "ai_triger_auto"
-	mouseConfigDict[MouseBtnLeft] = "ai_triger_MOUSE_LEFT"
-	mouseConfigDict[MouseBtnForward] = "btn_left"
+	// mouseConfigDict[MouseBtnBack] = "ai_triger_auto"
+	// mouseConfigDict[MouseBtnLeft] = "ai_triger_MOUSE_LEFT"
+	// mouseConfigDict[MouseBtnForward] = "btn_left"
 
 	// mouseConfigDict[MouseBtnBack] = "ai_triger_juji_auto"
 
@@ -44,6 +44,30 @@ func configInit() {
 	// mouseConfigDict[MouseBtnBack] = "K437_downdrag"
 
 	// mouseConfigDict[MouseBtnMiddle] = "test_move_from_file"
+
+	preConfigDict["清空"] = [2]map[byte]string{} // server设置的时候，都是重置然后一条一条设置。
+	preConfigDict["弓箭自动扳机"] = [2]map[byte]string{
+		{
+			MouseBtnBack:    "ai_triger_auto",
+			MouseBtnLeft:    "ai_triger_MOUSE_LEFT",
+			MouseBtnForward: "btn_left",
+		},
+		{},
+	}
+	preConfigDict["老王的PKM"] = [2]map[byte]string{
+		{
+			MouseBtnLeft:    "老王的PKM",
+			MouseBtnForward: "btn_left",
+		},
+		{},
+	}
+	preConfigDict["K437"] = [2]map[byte]string{
+		{
+			MouseBtnLeft:    "K437_downdrag",
+			MouseBtnForward: "btn_left",
+		},
+		{},
+	}
 }
 
 type macro struct {
