@@ -6,11 +6,11 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
-	"github.com/akamensky/argparse"
+	"github.com/kenshaw/evdev"
+	"github.com/spf13/viper"
 )
 
 var globalCloseSignal = make(chan bool) //仅会在程序退出时关闭  不用于其他用途
@@ -40,7 +40,7 @@ func udp_listener(port int) {
 			recv_ch <- buf[:n]
 		}
 	}()
-	logger.Infof("已准备接收远程事件: 0.0.0.0:%d", port)
+	logger.Infof("正则接收远程数据: 0.0.0.0:%d", port)
 	for {
 		select {
 		case <-globalCloseSignal:
@@ -56,130 +56,144 @@ func udp_listener(port int) {
 	}
 }
 
+type Config struct {
+	Debug  bool `mapstructure:"debug"`
+	Server struct {
+		Port int `mapstructure:"port"`
+	} `mapstructure:"server"`
+	Src struct {
+		Inputs struct {
+			Enabled    bool   `mapstructure:"enabled"`
+			AutoDetect bool   `mapstructure:"autoDetect"`
+			Pattern    string `mapstructure:"pattern"`
+		} `mapstructure:"inputs"`
+		Makcu struct {
+			Enabled  bool   `mapstructure:"enabled"`
+			Baudrate int    `mapstructure:"baudrate"`
+			TtyPath  string `mapstructure:"ttyPath"`
+		} `mapstructure:"makcu"`
+		UDP struct {
+			Enabled bool `mapstructure:"enabled"`
+			Port    int  `mapstructure:"port"`
+		} `mapstructure:"udp"`
+	} `mapstructure:"src"`
+	Dst struct {
+		Kcom5 struct {
+			Baudrate int    `mapstructure:"baudrate"`
+			TtyPath  string `mapstructure:"ttyPath"`
+			Sbdesc   string `mapstructure:"sbdesc"`
+			Csdesc   string `mapstructure:"csdesc"`
+			Cpdesc   string `mapstructure:"cpdesc"`
+			Xldesc   string `mapstructure:"xldesc"`
+		} `mapstructure:"kcom5"`
+		Makcu struct {
+			Baudrate int    `mapstructure:"baudrate"`
+			TtyPath  string `mapstructure:"ttyPath"`
+		} `mapstructure:"makcu"`
+		UDP struct {
+			IP   string `mapstructure:"ip"`
+			Port int    `mapstructure:"port"`
+		} `mapstructure:"udp"`
+		UDS struct {
+			Address string `mapstructure:"address"`
+		} `mapstructure:"uds"`
+		UsbGadget struct {
+			MouseFile    string `mapstructure:"mouseFile"`
+			KeyboardFile string `mapstructure:"keyboardFile"`
+		} `mapstructure:"usbgadget"`
+	} `mapstructure:"dst"`
+	UsingDst string `mapstructure:"usingDst"`
+}
+
+var Cfg *Config
+
 func main() {
-	//如果有参数-n 则测试模式
-	parser := argparse.NewParser("input2com", " ")
 
-	var debug = parser.Flag("d", "debug", &argparse.Options{
-		Required: false,
-		Default:  false,
-		Help:     "调试模式",
+	res := eventPacker([]evdev.Event{
+		{
+			Type:  evdev.EventKey,
+			Code:  uint16(KeyR),
+			Value: 1, //down == 1
+		},
 	})
-
-	var auto_detect = parser.Flag("a", "auto-detect", &argparse.Options{
-		Required: false,
-		Default:  false,
-		Help:     "关闭自动检测设备 默认开启",
-	})
-
-	var badurate = parser.Int("b", "badurate", &argparse.Options{
-		Required: false,
-		Help:     "波特率",
-		Default:  2000000,
-	})
-
-	var ttyPath = parser.String("t", "tty", &argparse.Options{
-		Required: false,
-		Default:  "/dev/ttyUSB*",
-		Help:     "串口设备路径，可以使用通配符来匹配第一个设备",
-	})
-
-	var sbDesc = parser.String("", "sbdesc", &argparse.Options{
-		Required: false,
-		Default:  "",
-		Help:     "自定义设备描述符",
-	})
-	var csDesc = parser.String("", "csdesc", &argparse.Options{
-		Required: false,
-		Default:  "",
-		Help:     "自定义厂商描述符",
-	})
-	var cpDesc = parser.String("", "cpdesc", &argparse.Options{
-		Required: false,
-		Default:  "",
-		Help:     "自定义产品描述符",
-	})
-	var xlDesc = parser.String("", "xldesc", &argparse.Options{
-		Required: false,
-		Default:  "",
-		Help:     "自定义序列号描述符",
-	})
-
-	var patern = parser.String("", "pattern", &argparse.Options{
-		Required: false,
-		Default:  ".*",
-		Help:     "捕获设备名称的通配符模式",
-	})
-
-	var port = parser.Int("p", "port", &argparse.Options{
-		Required: false,
-		Help:     "端口",
-		Default:  9264,
-	})
-
-	err := parser.Parse(os.Args)
+	logger.Infof("eventPacker res : %v", res)
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
+	err := viper.ReadInConfig()
 	if err != nil {
-		fmt.Print(parser.Usage(err))
-		os.Exit(1)
+		panic(err)
 	}
+	err = viper.Unmarshal(&Cfg)
+	if err != nil {
+		panic(err)
+	}
+	logger.Infof("%v", Cfg)
 
-	go serve(*port) //启动配置服务器
+	go serve(Cfg.Server.Port) //启动配置服务器
 
-	if *debug {
+	if Cfg.Debug {
 		logger.WithDebug()
 	}
 
-	matches, err := filepath.Glob(*ttyPath)
-	if err != nil {
-		logger.Fatalf("无法匹配设备路径: %v", err)
+	var makcu *makcu
+	var makcu_err error
+	var macroKB *macroMouseKeyboard
+
+	switch Cfg.UsingDst {
+	case "kcom5":
+		macroKB = NewMouseKeyboard_MacroInterceptor(
+			NewMouseKeyboard_KCOM5(Cfg.Dst.Kcom5.TtyPath, Cfg.Dst.Kcom5.Baudrate, Cfg.Dst.Kcom5.Sbdesc, Cfg.Dst.Kcom5.Csdesc, Cfg.Dst.Kcom5.Cpdesc, Cfg.Dst.Kcom5.Xldesc),
+		)
+	case "makcu":
+		makcu, makcu_err = getMackcuInstance(Cfg.Dst.Makcu.TtyPath, Cfg.Dst.Makcu.Baudrate)
+		if makcu_err != nil {
+			logger.Errorf("ERROR:%v", makcu_err)
+			os.Exit(1)
+		}
+		macroKB = NewMouseKeyboard_MacroInterceptor(
+			NewMouseKeyboard_MAKCU(*makcu),
+		)
+	case "udp":
+		macroKB = NewMouseKeyboard_MacroInterceptor(
+			NewMouseKeyboard_UDP(fmt.Sprintf("%s:%d", Cfg.Dst.UDP.IP, Cfg.Dst.UDP.Port)),
+		)
+	case "uds":
+		macroKB = NewMouseKeyboard_MacroInterceptor(
+			NewMouseKeyboard_UDS(Cfg.Dst.UDS.Address),
+		)
+	case "usbgadget":
+		macroKB = NewMouseKeyboard_MacroInterceptor(
+			NewMouseKeyboard_USBGadget(Cfg.Dst.UsbGadget.MouseFile, Cfg.Dst.UsbGadget.KeyboardFile),
+		)
+
+	default:
+		logger.Fatalf("usingDst %s not support", Cfg.UsingDst)
+		os.Exit(1)
 	}
-	if len(matches) == 0 {
-		logger.Fatalf("没有找到匹配的设备路径: %s", *ttyPath)
+
+	if Cfg.Src.Inputs.Enabled {
+		go initInputAdapter_LinuxInputs(macroKB, Cfg.Src.Inputs.AutoDetect, Cfg.Src.Inputs.Pattern)
 	}
-	devpath := matches[0] // 取第一个匹配的设备路径
-	logger.Infof("使用设备路径: %s", devpath)
-	logger.Infof("波特率: %d", *badurate)
-	logger.Infof("%v,%v,%v,%v,%v,%v", devpath, *badurate, *sbDesc, *csDesc, *cpDesc, *xlDesc)
-
-	makcu, err := getMackcuInstance("/dev/ttyACM0", 4000000)
-	if err != nil {
-		logger.Errorf("ERROR:%v", err)
-		return
+	if Cfg.Src.Makcu.Enabled {
+		if makcu == nil { //尝试复用makcu实例
+			makcu, makcu_err = getMackcuInstance(Cfg.Src.Makcu.TtyPath, Cfg.Src.Makcu.Baudrate)
+			if makcu_err != nil {
+				logger.Errorf("ERROR:%v", makcu_err)
+				os.Exit(1)
+			}
+		} else {
+			if Cfg.Src.Makcu.TtyPath != Cfg.Dst.Makcu.TtyPath || Cfg.Src.Makcu.Baudrate != Cfg.Dst.Makcu.Baudrate {
+				logger.Errorf("src makcu ttyPath %s baudrate %d not equal dst makcu ttyPath %s baudrate %d", Cfg.Src.Makcu.TtyPath, Cfg.Src.Makcu.Baudrate, Cfg.Dst.Makcu.TtyPath, Cfg.Dst.Makcu.Baudrate)
+				os.Exit(1)
+			}
+		}
+		go initInputAdapter_MakcuCOM(macroKB, *makcu)
 	}
-
-	makcuKB := NewMouseKeyboard_MAKCU(*makcu)
-	// comKB := NewMouseKeyboard_KCOM5(devpath, *badurate, *sbDesc, *csDesc, *cpDesc, *xlDesc)
-	macroKB := NewMouseKeyboard_MacroInterceptor(makcuKB)
-
-	go initInputAdapter_LinuxInputs(macroKB, *auto_detect, *patern)
-
-	go initInputAdapter_MakcuCOM(macroKB, *makcu)
-	// comKB := NewMouseKeyboard_KCOM5(devpath, *badurate, *sbDesc, *csDesc, *cpDesc, *xlDesc)
-	// macroKB := NewMouseKeyboard_MacroInterceptor(comKB)
-	// makcuKB, err := Connect(devpath, 4000000)
-	// if makcuKB == nil {
-	// 	panic(err)
-	// }
-	// makcuKB.SetButtonStatus(true)
-	// makcuKB, err = ChangeBaudRate(makcuKB)
-	// if makcuKB == nil {
-	// 	panic(err)
-	// }
-	// go makcuKB.ListenLoop()
-	// defer makcuKB.Close()
-
-	// handelMakcuEvent := func(btn MouseButton, pressed bool) {
-	// 	logger.Logger.Infof("btn %d, pressed: %t", btn, pressed)
-	// 	// if pressed {
-	// 	// 	macroKB.BtnDown(byte(1<<btn), "makcu")
-	// 	// } else {
-	// 	// 	macroKB.BtnUp(byte(1<<btn), "makcu")
-	// 	// }
-	// }
-	// makcuKB.SetButtonCallback(handelMakcuEvent)
-
+	if Cfg.Src.UDP.Enabled {
+		go initInputAdapter_UDP(macroKB, Cfg.Src.UDP.Port)
+	}
 	go udp_listener(9321)
-
 	exitChan := make(chan os.Signal)
 	signal.Notify(exitChan, os.Interrupt, os.Kill, syscall.SIGTERM)
 	<-exitChan

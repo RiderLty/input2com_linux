@@ -19,3 +19,9 @@ func NewMouseKeyboard_USBGadget(mousDevPath string, keyboardDevPath string) *USB
 		keyBytes:        make([]byte, 6),
 	}
 }
+
+func (mk *USBGadgetMouseKeyboard) MouseMove(dx, dy, Wheel int32) error { return nil }
+func (mk *USBGadgetMouseKeyboard) MouseBtnDown(keyCode byte) error     { return nil }
+func (mk *USBGadgetMouseKeyboard) MouseBtnUp(keyCode byte) error       { return nil }
+func (mk *USBGadgetMouseKeyboard) KeyDown(keyCode byte) error          { return nil }
+func (mk *USBGadgetMouseKeyboard) KeyUp(keyCode byte) error            { return nil }

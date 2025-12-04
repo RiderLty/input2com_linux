@@ -1,6 +1,11 @@
 package main
 
-import "strconv"
+import (
+	"encoding/binary"
+	"strconv"
+
+	"github.com/kenshaw/evdev"
+)
 
 var SpecialKeysMap = map[byte]byte{
 	KeyLeftCtrl:   byte(1 << 0),
@@ -281,6 +286,114 @@ var Linux2hid = map[uint8]uint8{
 	126: 232,
 }
 
+var hid2linux = map[uint8]uint8{
+	4:   30,
+	5:   48,
+	6:   46,
+	7:   32,
+	8:   18,
+	9:   33,
+	10:  34,
+	11:  35,
+	12:  23,
+	13:  36,
+	14:  37,
+	15:  38,
+	16:  50,
+	17:  49,
+	18:  24,
+	19:  25,
+	20:  16,
+	21:  19,
+	22:  31,
+	23:  20,
+	24:  22,
+	25:  47,
+	26:  17,
+	27:  45,
+	28:  21,
+	29:  44,
+	30:  2,
+	31:  3,
+	32:  4,
+	33:  5,
+	34:  6,
+	35:  7,
+	36:  8,
+	37:  9,
+	38:  10,
+	39:  11,
+	40:  28,
+	41:  1,
+	42:  14,
+	43:  15,
+	44:  57,
+	45:  12,
+	46:  13,
+	47:  26,
+	48:  27,
+	49:  43,
+	51:  39,
+	52:  40,
+	53:  41,
+	54:  51,
+	55:  52,
+	56:  53,
+	57:  58,
+	58:  59,
+	59:  60,
+	60:  61,
+	61:  62,
+	62:  63,
+	63:  64,
+	64:  65,
+	65:  66,
+	66:  67,
+	67:  68,
+	68:  87,
+	69:  88,
+	70:  99,
+	71:  70,
+	72:  119,
+	73:  110,
+	74:  102,
+	75:  104,
+	76:  111,
+	77:  107,
+	78:  109,
+	79:  106,
+	80:  105,
+	81:  108,
+	82:  103,
+	83:  69,
+	84:  98,
+	85:  55,
+	86:  74,
+	87:  78,
+	88:  96,
+	89:  79,
+	90:  80,
+	91:  81,
+	92:  75,
+	93:  76,
+	94:  77,
+	95:  71,
+	96:  72,
+	97:  73,
+	98:  82,
+	99:  83,
+	100: 86,
+	101: 127,
+	224: 29,
+	225: 42,
+	226: 56,
+	227: 125,
+	228: 97,
+	229: 54,
+	230: 100,
+	232: 126,
+}
+
 var MouseValidKeys = map[string]bool{
 	strconv.FormatUint(uint64(MouseBtnLeft), 10):    true,
 	strconv.FormatUint(uint64(MouseBtnRight), 10):   true,
@@ -454,4 +567,34 @@ var MouseKeyUp = map[byte]string{
 	MouseBtnMiddle:  "km.middle(0)\r",
 	MouseBtnBack:    "km.side1(0)\r",
 	MouseBtnForward: "km.side2(0)\r",
+}
+
+type event_pack struct {
+	//表示一个动作 由一系列event组成
+	dev_name string
+	dev_type dev_type
+	events   []*evdev.Event
+}
+
+type dev_type uint8
+
+const (
+	type_mouse          = dev_type(0)
+	type_keyboard       = dev_type(1)
+	type_joystick       = dev_type(2)
+	type_touch          = dev_type(3)
+	type_motion_sensors = dev_type(4)
+	type_unknown        = dev_type(5)
+)
+
+func eventPacker(events []evdev.Event) []byte {
+	data := make([]byte, 1+len(events)*8)
+	data[0] = uint8(len(events))
+	for i, event := range events {
+		offset := 1 + i*8
+		binary.LittleEndian.PutUint16(data[offset:offset+2], uint16(event.Type))
+		binary.LittleEndian.PutUint16(data[offset+2:offset+4], event.Code)
+		binary.LittleEndian.PutUint32(data[offset+4:offset+8], uint32(event.Value))
+	}
+	return data
 }
