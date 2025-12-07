@@ -16,6 +16,9 @@ func NewMouseKeyboard_UDS(address string) *UDSMouseKeyboard {
 	if err != nil {
 		logger.Errorf("CreateUDSWriter error : %v", err)
 		return nil
+	} else {
+		logger.Infof("UDS事件发送目标地址 :")
+		logger.Infof("UDS://%s", address)
 	}
 	return &UDSMouseKeyboard{
 		writer: *writer,

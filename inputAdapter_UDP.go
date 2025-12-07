@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"net"
 
 	"github.com/kenshaw/evdev"
 )
@@ -10,8 +11,36 @@ import (
 func initInputAdapter_UDP(mk mouseKeyboard, port int) {
 	conn, err := CreateUDPReader(fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {
-		logger.Errorf("ERROR:%v", err)
+		logger.Errorf("创建UDP监听接口失败: %v", err)
 		return
+	} else {
+		interfaces, err := net.Interfaces()
+		if err != nil {
+			panic(err)
+		}
+		logger.Info("正在从以下地址接收UDP事件:")
+		for _, iface := range interfaces {
+			if iface.Flags&net.FlagUp == 0 {
+				continue
+			}
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, addr := range addrs {
+				ipNet, ok := addr.(*net.IPNet)
+				if !ok {
+					continue
+				}
+				ipv4 := ipNet.IP.To4()
+				if ipv4 == nil {
+					continue // 跳过非 IPv4 地址
+				}
+				if !ipv4.IsLoopback() {
+					logger.Infof("UDP://%s:%v", ipv4, port)
+				}
+			}
+		}
 	}
 	eventsCh := conn.ReadChan()
 	handelRelEvent := func(x, y, HWhell, Wheel int32) {

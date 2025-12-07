@@ -14,8 +14,11 @@ type UDPMouseKeyboard struct {
 func NewMouseKeyboard_UDP(address string) *UDPMouseKeyboard {
 	writer, err := CreateUDPWriter(address)
 	if err != nil {
-		logger.Errorf("CreateUDPWriter error : %v", err)
+		logger.Errorf("创建UDP接口失败 : %v", err)
 		return nil
+	} else {
+		logger.Infof("UDP事件发送目标 :")
+		logger.Infof("UDP://%s", address)
 	}
 	return &UDPMouseKeyboard{
 		writer: *writer,

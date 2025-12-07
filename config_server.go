@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -22,7 +23,6 @@ var (
 )
 
 func serve(port int) {
-	logger.Infof(fmt.Sprintf("Starting config server on port %d", port))
 	webFS, err := fs.Sub(staticFS, "server/build")
 	if err != nil {
 		logger.Errorf("无法加载静态文件: %v", err)
@@ -138,6 +138,33 @@ func serve(port int) {
 
 	})
 
-	logger.Infof("Config server started ")
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		panic(err)
+	}
+	logger.Info("可从以下网址访问控制后台:")
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ipv4 := ipNet.IP.To4()
+			if ipv4 == nil {
+				continue // 跳过非 IPv4 地址
+			}
+			if !ipv4.IsLoopback() {
+				logger.Infof("http://%s:%v", ipv4, port)
+			}
+		}
+
+	}
 	http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 }

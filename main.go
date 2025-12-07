@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kenshaw/evdev"
 	"github.com/spf13/viper"
 )
 
@@ -40,13 +39,11 @@ func udp_listener(port int) {
 			recv_ch <- buf[:n]
 		}
 	}()
-	logger.Infof("正则接收远程数据: 0.0.0.0:%d", port)
 	for {
 		select {
 		case <-globalCloseSignal:
 			return
 		case pack := <-recv_ch:
-
 			for i := 0; i < 6; i++ {
 				start := i * 4
 				udp_ints[i] = int32(binary.LittleEndian.Uint32(pack[start : start+4]))
@@ -108,15 +105,6 @@ type Config struct {
 var Cfg *Config
 
 func main() {
-
-	res := eventPacker([]evdev.Event{
-		{
-			Type:  evdev.EventKey,
-			Code:  uint16(KeyR),
-			Value: 1, //down == 1
-		},
-	})
-	logger.Infof("eventPacker res : %v", res)
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
@@ -128,19 +116,17 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	logger.Infof("%v", Cfg)
-
 	go serve(Cfg.Server.Port) //启动配置服务器
-
 	if Cfg.Debug {
 		logger.WithDebug()
 	}
-
 	var makcu *makcu
 	var makcu_err error
 	var macroKB *macroMouseKeyboard
 
+	logger.Infof("使用输出接口 %s", Cfg.UsingDst)
 	switch Cfg.UsingDst {
+
 	case "kcom5":
 		macroKB = NewMouseKeyboard_MacroInterceptor(
 			NewMouseKeyboard_KCOM5(Cfg.Dst.Kcom5.TtyPath, Cfg.Dst.Kcom5.Baudrate, Cfg.Dst.Kcom5.Sbdesc, Cfg.Dst.Kcom5.Csdesc, Cfg.Dst.Kcom5.Cpdesc, Cfg.Dst.Kcom5.Xldesc),

@@ -11,7 +11,7 @@ src:
   makcu:
     enabled: false
     baudrate: 4000000
-    ttyPath: /dev/ttyAMA0
+    ttyPath: /dev/ttyACM0
   udp:
     enabled: true
     port: 9265
@@ -19,19 +19,19 @@ dst:
   kcom5:
     baudrate: 2000000
     ttyPath: /dev/ttyUSB0
-    sbdesc: Logitech
-    csdesc: Logitech,Inc
-    cpdesc: G703 LIGHTSPEED
-    xldesc: E57A3B1D
+    sbdesc: 
+    csdesc: 
+    cpdesc: 
+    xldesc: 
   makcu:
     baudrate: 4000000
-    ttyPath: /dev/ttyAMA0
+    ttyPath: /dev/ttyACM0
   udp:
-    ip: 127.0.0.1
+    ip: 192.168.3.64
     port: 61069
   uds:
     address: uds_mouse_keyboard_event_socket
   usbgadget:
     mouseFile: /dev/input/hidg0
     keyboardFile: /dev/input/hidg1
-usingDst: kcom5
+usingDst: makcu
