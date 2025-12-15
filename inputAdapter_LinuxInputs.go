@@ -178,7 +178,7 @@ func autoDetectAndRead(eventChan chan *eventPack, patern string, loop bool) {
 			}
 			for index, devType := range autoDetectResult {
 				devName := getDevNameByIndex(index)
-				if devName == "input2com-virtual-device" {
+				if devName == Cfg.Dst.Uinput.DeviceName {
 					continue //跳过生成的虚拟设备
 				}
 				re := regexp.MustCompile(patern)
@@ -186,7 +186,6 @@ func autoDetectAndRead(eventChan chan *eventPack, patern string, loop bool) {
 					logger.Debugf("设备名称 %s 不匹配模式 %s", devName, patern)
 					continue
 				}
-
 				if devType == typeMouse || devType == typeKeyboard || devType == typeJoystick {
 					logger.Infof("检测到设备 %s(/dev/input/event%d) : %s", devName, index, devTypeFriendlyName[devType])
 					localIndex := index
@@ -206,13 +205,13 @@ func autoDetectAndRead(eventChan chan *eventPack, patern string, loop bool) {
 	}
 }
 
-func initInputAdapter_LinuxInputs(mk mouseKeyboard, auto_detect bool, patern string) {
+func initInputAdapter_LinuxInputs(mk mouseKeyboard, hotPlug bool, patern string) {
 	//初始化linux输入设备适配器
 	// 自动检测设备并读取事件 循环检测 自动管理设备插入移除
 	// 事件会使用mk的方法处理
 	// 使用携程启用
 	eventsCh := make(chan *eventPack) //主要设备事件管道
-	go autoDetectAndRead(eventsCh, patern, auto_detect)
+	go autoDetectAndRead(eventsCh, patern, hotPlug)
 	handelRelEvent := func(x, y, HWhell, Wheel int32) {
 		if x != 0 || y != 0 || HWhell != 0 || Wheel != 0 {
 			if !drop_move {

@@ -60,9 +60,9 @@ type Config struct {
 	} `mapstructure:"server"`
 	Src struct {
 		Inputs struct {
-			Enabled    bool   `mapstructure:"enabled"`
-			AutoDetect bool   `mapstructure:"autoDetect"`
-			Pattern    string `mapstructure:"pattern"`
+			Enabled bool   `mapstructure:"enabled"`
+			HotPlug bool   `mapstructure:"hotPlug"`
+			Pattern string `mapstructure:"pattern"`
 		} `mapstructure:"inputs"`
 		Makcu struct {
 			Enabled  bool   `mapstructure:"enabled"`
@@ -94,6 +94,9 @@ type Config struct {
 		UDS struct {
 			Address string `mapstructure:"address"`
 		} `mapstructure:"uds"`
+		Uinput struct {
+			DeviceName string `mapstructure:"deviceName"`
+		} `mapstructure:"uinput"`
 		UsbGadget struct {
 			MouseFile    string `mapstructure:"mouseFile"`
 			KeyboardFile string `mapstructure:"keyboardFile"`
@@ -148,6 +151,10 @@ func main() {
 		macroKB = NewMouseKeyboard_MacroInterceptor(
 			NewMouseKeyboard_UDS(Cfg.Dst.UDS.Address),
 		)
+	case "uinput":
+		macroKB = NewMouseKeyboard_MacroInterceptor(
+			NewMouseKeyboard_Uinput(Cfg.Dst.Uinput.DeviceName),
+		)
 	case "usbgadget":
 		macroKB = NewMouseKeyboard_MacroInterceptor(
 			NewMouseKeyboard_USBGadget(Cfg.Dst.UsbGadget.MouseFile, Cfg.Dst.UsbGadget.KeyboardFile),
@@ -159,7 +166,7 @@ func main() {
 	}
 
 	if Cfg.Src.Inputs.Enabled {
-		go initInputAdapter_LinuxInputs(macroKB, Cfg.Src.Inputs.AutoDetect, Cfg.Src.Inputs.Pattern)
+		go initInputAdapter_LinuxInputs(macroKB, Cfg.Src.Inputs.HotPlug, Cfg.Src.Inputs.Pattern)
 	}
 	if Cfg.Src.Makcu.Enabled {
 		if makcu == nil { //尝试复用makcu实例

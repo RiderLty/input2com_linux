@@ -6,7 +6,7 @@ server:
 src:
   inputs:
     enabled: true
-    autoDetect: true
+    hotPlug: false
     pattern: ".*"
   makcu:
     enabled: false
@@ -31,7 +31,9 @@ dst:
     port: 61069
   uds:
     address: uds_mouse_keyboard_event_socket
+  uinput:
+    deviceName: input2com
   usbgadget:
     mouseFile: /dev/input/hidg0
     keyboardFile: /dev/input/hidg1
-usingDst: makcu
+usingDst: uinput
