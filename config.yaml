@@ -25,7 +25,7 @@ dst:
     xldesc: 
   makcu:
     baudrate: 4000000
-    ttyPath: /dev/ttyACM0
+    ttyPath: /dev/ttyACM1
   udp:
     ip: 192.168.3.64
     port: 61069
@@ -36,4 +36,4 @@ dst:
   usbgadget:
     mouseFile: /dev/input/hidg0
     keyboardFile: /dev/input/hidg1
-usingDst: uinput
+usingDst: makcu

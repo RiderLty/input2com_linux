@@ -1,0 +1,103 @@
+{
+    "DEADZONE": {
+        "LS": [
+            0.4,
+            0.6
+        ],
+        "RS": [
+            0.46,
+            0.54
+        ]
+    },
+    "ABS": {
+        "17": {
+            "name": "HAT0Y",
+            "range": [
+                -1,
+                1
+            ],
+            "reverse": false
+        },
+        "16": {
+            "name": "HAT0X",
+            "range": [
+                -1,
+                1
+            ],
+            "reverse": false
+        },
+        "0": {
+            "name": "LS_X",
+            "range": [
+                0,
+                255
+            ],
+            "reverse": false
+        },
+        "1": {
+            "name": "LS_Y",
+            "range": [
+                0,
+                255
+            ],
+            "reverse": false
+        },
+        "10": {
+            "name": "LT",
+            "range": [
+                0,
+                255
+            ],
+            "reverse": false
+        },
+        "9": {
+            "name": "RT",
+            "range": [
+                0,
+                255
+            ],
+            "reverse": false
+        },
+        "2": {
+            "name": "RS_X",
+            "range": [
+                0,
+                255
+            ],
+            "reverse": false
+        },
+        "5": {
+            "name": "RS_Y",
+            "range": [
+                0,
+                255
+            ],
+            "reverse": false
+        }
+    },
+    "BTN": {
+        "304": "BTN_A",
+        "305": "BTN_B",
+        "307": "BTN_X",
+        "308": "BTN_Y",
+        "317": "BTN_LS",
+        "318": "BTN_RS",
+        "310": "BTN_LB",
+        "311": "BTN_RB",
+        "314": "BTN_SELECT",
+        "315": "BTN_START",
+        "316": "BTN_HOME"
+    },
+    "MAP_KEYBOARD": {
+        "BTN_LT": "BTN_RIGHT",
+        "BTN_RT": "BTN_LEFT",
+        "BTN_DPAD_UP": "KEY_UP",
+        "BTN_DPAD_LEFT": "KEY_LEFT",
+        "BTN_DPAD_RIGHT": "KEY_RIGHT",
+        "BTN_DPAD_DOWN": "KEY_DOWN",
+        "BTN_A": "KEY_ENTER",
+        "BTN_B": "KEY_BACK",
+        "BTN_SELECT": "KEY_COMPOSE",
+        "BTN_THUMBL": "KEY_HOME"
+    }
+}
