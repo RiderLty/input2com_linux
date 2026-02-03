@@ -53,6 +53,19 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 		UP   int32 = 0
 	)
 
+	var DPAD_MAP = [9]int32{
+		6, 4, 5, // index 0, 1, 2 (y=-1)
+		2, 0, 1, // index 3, 4, 5 (y=0)
+		10, 8, 9, // index 6, 7, 8 (y=1)
+	}
+
+	dpadBitName := [4]string{
+		"BTN_DPAD_RIGHT",
+		"BTN_DPAD_LEFT",
+		"BTN_DPAD_UP",
+		"BTN_DPAD_DOWN",
+	}
+
 	friendly_name_2_mouse := map[string]byte{
 		"BTN_LEFT":    MouseBtnLeft,
 		"BTN_RIGHT":   MouseBtnRight,
@@ -72,9 +85,8 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 				keyCode := fmt.Sprintf("%d", event.Code)
 				keyName := joystickInfo[devName].Get("BTN").Get(keyCode).MustString()
 				if mappedKeyName, ok := joystickInfo[devName].Get("MAP_KEYBOARD").CheckGet(keyName); ok {
-					logger.Errorf("%v,%v => %v", keyCode, keyName, mappedKeyName)
-					if "BTN" == keyName[:3] { //鼠标
-						mouseCode := friendly_name_2_mouse[keyName]
+					if "BTN" == mappedKeyName.MustString()[:3] { //鼠标
+						mouseCode := friendly_name_2_mouse[mappedKeyName.MustString()]
 						if event.Value == 0 {
 							mk.MouseBtnUp(mouseCode)
 						} else {
@@ -82,9 +94,9 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 						}
 					} else {
 						if event.Value == 0 {
-							mk.KeyUp(Linux2hid[byte(friendly_name_2_keycode[mappedKeyName.MustString()])])
+							mk.KeyUp(byte(friendly_name_2_keycode[mappedKeyName.MustString()]))
 						} else {
-							mk.KeyDown(Linux2hid[byte(friendly_name_2_keycode[mappedKeyName.MustString()])])
+							mk.KeyDown(byte(friendly_name_2_keycode[mappedKeyName.MustString()]))
 						}
 					}
 				}
@@ -93,13 +105,21 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 	}
 
 	go func() {
+		counter := 0
 		for {
 			select {
 			case <-globalCloseSignal:
 				return
 			default:
-				logger.Debugf("LS_X_val : %d, LS_Y_val : %d, RS_X_val : %d, RS_Y_val : %d, LT_val : %d, RT_val : %d", LS_X_val, LS_Y_val, RS_X_val, RS_Y_val, LT_val, RT_val)
-				mk.MouseMove((RS_X_val-512)*15/512, (RS_Y_val-512)*15/512, 0)
+				// logger.Debugf("LS_X_val : %d, LS_Y_val : %d, RS_X_val : %d, RS_Y_val : %d, LT_val : %d, RT_val : %d", LS_X_val, LS_Y_val, RS_X_val, RS_Y_val, LT_val, RT_val)
+				counter += 1
+				counter %= 10
+				if counter == 0 && LS_X_val > -1 {
+
+					mk.MouseMove((RS_X_val-512)*15/512, (RS_Y_val-512)*15/512, -1 * (LS_Y_val-512)*3/512)
+				}else{
+					mk.MouseMove((RS_X_val-512)*15/512, (RS_Y_val-512)*15/512, 0)
+				}
 				time.Sleep(time.Duration(4) * time.Millisecond)
 			}
 		}
@@ -109,11 +129,11 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 		if len(events) == 0 {
 			return
 		}
+		dpad_state := struct{X int32; Y int32}{HAT0X_val,HAT0Y_val}
 		for _, event := range events {
 			axisInfo := joystickInfo[devName].Get("ABS").Get(fmt.Sprintf("%d", event.Code))
 			valMini := int32(axisInfo.Get("range").GetIndex(0).MustInt())
 			valMax := int32(axisInfo.Get("range").GetIndex(1).MustInt())
-
 			switch axisInfo.Get("name").MustString() {
 			case "LS_X":
 				LS_X_val = ((event.Value - valMini) << 10) / (valMax - valMini)
@@ -140,27 +160,30 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 					mk.MouseBtnUp(MouseBtnLeft)
 				}
 			case "HAT0X":
-				action := mk.KeyUp
-				if HAT0X_val == 0 { // 上一个值为0 说明是按下
-					action = mk.KeyDown
-				}
-				if event.Value == 1 { // 1 说明是向右
-					action(Linux2hid[byte(friendly_name_2_keycode["BTN_DPAD_RIGHT"])])
-				} else {
-					action(Linux2hid[byte(friendly_name_2_keycode["BTN_DPAD_LEFT"])])
-				}
 				HAT0X_val = event.Value
 			case "HAT0Y":
-				action := mk.KeyUp
-				if HAT0Y_val == 0 { // 上一个值为0 说明是按下
-					action = mk.KeyDown
-				}
-				if event.Value == 1 { // 1 说明是向上
-					action(Linux2hid[byte(friendly_name_2_keycode["BTN_DPAD_UP"])])
-				} else {
-					action(Linux2hid[byte(friendly_name_2_keycode["BTN_DPAD_DOWN"])])
-				}
 				HAT0Y_val = event.Value
+			}
+		}
+		dpad_now_state :=  struct{X int32; Y int32}{HAT0X_val,HAT0Y_val}
+		lastDpadState := dpad_state.X + dpad_state.Y * 3 + 4
+		nowDpadState := dpad_now_state.X + dpad_now_state.Y * 3 + 4
+		if lastDpadState != nowDpadState {
+			justPressed := DPAD_MAP[nowDpadState] &^ DPAD_MAP[lastDpadState]
+			justReleased := DPAD_MAP[lastDpadState] &^ DPAD_MAP[nowDpadState]
+			for index , bitName := range dpadBitName{
+				if justPressed & (1 << index) != 0 {
+					if mappedKeyName, ok := joystickInfo[devName].Get("MAP_KEYBOARD").CheckGet(bitName); ok {
+						logger.Debugf("按下 : %v", mappedKeyName.MustString())
+						mk.KeyDown(byte(friendly_name_2_keycode[mappedKeyName.MustString()]))
+					}
+				}
+				if justReleased & (1 << index) != 0 {
+					if mappedKeyName, ok := joystickInfo[devName].Get("MAP_KEYBOARD").CheckGet(bitName); ok {
+						logger.Debugf("松开 : %v", mappedKeyName.MustString())
+						mk.KeyUp(byte(friendly_name_2_keycode[mappedKeyName.MustString()]))
+					}
+				}
 			}
 		}
 	}
