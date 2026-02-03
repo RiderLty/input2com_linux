@@ -129,11 +129,11 @@ func main() {
 
 	logger.Infof("使用输出接口 %s", Cfg.UsingDst)
 	switch Cfg.UsingDst {
-
 	case "kcom5":
 		macroKB = NewMouseKeyboard_MacroInterceptor(
 			NewMouseKeyboard_KCOM5(Cfg.Dst.Kcom5.TtyPath, Cfg.Dst.Kcom5.Baudrate, Cfg.Dst.Kcom5.Sbdesc, Cfg.Dst.Kcom5.Csdesc, Cfg.Dst.Kcom5.Cpdesc, Cfg.Dst.Kcom5.Xldesc),
 		)
+
 	case "makcu":
 		makcu, makcu_err = getMackcuInstance(Cfg.Dst.Makcu.TtyPath, Cfg.Dst.Makcu.Baudrate)
 		if makcu_err != nil {

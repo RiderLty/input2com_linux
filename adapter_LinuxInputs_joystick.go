@@ -1,45 +1,137 @@
 package main
 
 import (
-	"fmt"
-	"io/ioutil"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 
-	"github.com/bitly/go-simplejson"
 	"github.com/kenshaw/evdev"
 )
 
+// DeadzoneConfig 固定结构
+type DeadzoneConfig struct {
+	LS []float64 `json:"LS"`
+	RS []float64 `json:"RS"`
+}
+
+// AxisInfo 轴的具体信息
+type AxisInfo struct {
+	Name    string `json:"name"`
+	Range   []int  `json:"range"`
+	Reverse bool   `json:"reverse"`
+}
+
+// ControllerConfig 顶层配置结构 (用于 JSON 解析)
+type ControllerConfig struct {
+	Deadzone    DeadzoneConfig      `json:"DEADZONE"`
+	Abs         map[string]AxisInfo `json:"ABS"`
+	Btn         map[string]string   `json:"BTN"`
+	MapKeyboard map[string]string   `json:"MAP_KEYBOARD"`
+}
+
+// RuntimeControllerConfig 运行时优化的配置结构
+type RuntimeControllerConfig struct {
+	Deadzone    DeadzoneConfig
+	Abs         map[uint16]AxisInfo
+	Btn         map[uint16]string
+	MapKeyboard map[string]string
+}
+
+// 静态映射表，避免重复创建
+var friendly_name_2_mouse = map[string]byte{
+	"BTN_LEFT":    MouseBtnLeft,
+	"BTN_RIGHT":   MouseBtnRight,
+	"BTN_MIDDLE":  MouseBtnMiddle,
+	"BTN_SIDE":    MouseBtnForward,
+	"BTN_EXTRA":   MouseBtnBack,
+	"BTN_FORWARD": MouseBtnForward,
+	"BTN_BACK":    MouseBtnBack,
+	"BTN_TASK":    MouseBtnBack,
+}
+
+var DPAD_MAP = [9]int32{
+	6, 4, 5, // index 0, 1, 2 (y=-1)
+	2, 0, 1, // index 3, 4, 5 (y=0)
+	10, 8, 9, // index 6, 7, 8 (y=1)
+}
+
+var dpadBitName = [4]string{
+	"BTN_DPAD_RIGHT",
+	"BTN_DPAD_LEFT",
+	"BTN_DPAD_UP",
+	"BTN_DPAD_DOWN",
+}
+
+func stickMapMouse(val int32) int32 {
+	if val > 512 {
+		return (val - 512) * (val - 512) * 15 / 262144
+	} else {
+		return (512 - val) * (val - 512) * 15 / 262144
+	}
+}
+
 func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, patern string) {
 	//接收 手柄事件，转为键鼠输出
-	eventsCh := make(chan *eventPack) //主要设备事件管道
+	eventsCh := make(chan *eventPack, 10) // 增加缓冲
 	go autoDetectAndRead(eventsCh, patern, hotPlug, map[devType]bool{typeJoystick: true})
 
-	joystickInfo := make(map[string]*simplejson.Json)
+	joystickInfo := make(map[string]*RuntimeControllerConfig)
 	path, _ := exec.LookPath(os.Args[0])
-	abs, _ := filepath.Abs(path)
-	workingDir, _ := filepath.Split(abs)
+	absPath, _ := filepath.Abs(path)
+	workingDir, _ := filepath.Split(absPath)
 	joystickInfosDir := filepath.Join(workingDir, "joystickInfos")
+
 	if _, err := os.Stat(joystickInfosDir); os.IsNotExist(err) {
 		logger.Warnf("%s 文件夹不存在,没有载入任何手柄配置文件", joystickInfosDir)
 	} else {
-		files, _ := ioutil.ReadDir(joystickInfosDir)
+		files, _ := os.ReadDir(joystickInfosDir)
 		for _, file := range files {
 			if file.IsDir() {
 				continue
 			}
-			if file.Name()[len(file.Name())-5:] != ".json" {
+			if len(file.Name()) < 5 || file.Name()[len(file.Name())-5:] != ".json" {
 				continue
 			}
-			content, _ := ioutil.ReadFile(filepath.Join(joystickInfosDir, file.Name()))
-			info, _ := simplejson.NewJson(content)
-			joystickInfo[file.Name()[:len(file.Name())-5]] = info
-			logger.Infof("手柄配置文件已载入 : %s", file.Name())
+			content, _ := os.ReadFile(filepath.Join(joystickInfosDir, file.Name()))
+			var config ControllerConfig
+			err := json.Unmarshal(content, &config)
+			if err != nil {
+				logger.Errorf("解析配置文件 %s 失败: %v", file.Name(), err)
+				continue
+			}
+
+			// 转换为运行时配置
+			runtimeConfig := &RuntimeControllerConfig{
+				Deadzone:    config.Deadzone,
+				Abs:         make(map[uint16]AxisInfo, len(config.Abs)),
+				Btn:         make(map[uint16]string, len(config.Btn)),
+				MapKeyboard: config.MapKeyboard,
+			}
+
+			for k, v := range config.Abs {
+				code, err := strconv.Atoi(k)
+				if err == nil {
+					runtimeConfig.Abs[uint16(code)] = v
+				}
+			}
+			for k, v := range config.Btn {
+				code, err := strconv.Atoi(k)
+				if err == nil {
+					runtimeConfig.Btn[uint16(code)] = v
+				}
+			}
+
+			joystickInfo[file.Name()[:len(file.Name())-5]] = runtimeConfig
+			logger.Infof("手柄配置文件已载入 : %s", file.Name()[:len(file.Name())-5])
 		}
 	}
-	var LS_X_val int32 = 512 //所有轴 归一化到[0~1024]
+
+	// 状态变量
+	var LS_X_val int32 = 512
+	_ = LS_X_val
 	var LS_Y_val int32 = 512
 	var RS_X_val int32 = 512
 	var RS_Y_val int32 = 512
@@ -47,56 +139,29 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 	var HAT0Y_val int32 = 0
 	var LT_val int32 = 0
 	var RT_val int32 = 0
-
-	const (
-		DOWN int32 = 1
-		UP   int32 = 0
-	)
-
-	var DPAD_MAP = [9]int32{
-		6, 4, 5, // index 0, 1, 2 (y=-1)
-		2, 0, 1, // index 3, 4, 5 (y=0)
-		10, 8, 9, // index 6, 7, 8 (y=1)
-	}
-
-	dpadBitName := [4]string{
-		"BTN_DPAD_RIGHT",
-		"BTN_DPAD_LEFT",
-		"BTN_DPAD_UP",
-		"BTN_DPAD_DOWN",
-	}
-
-	friendly_name_2_mouse := map[string]byte{
-		"BTN_LEFT":    MouseBtnLeft,
-		"BTN_RIGHT":   MouseBtnRight,
-		"BTN_MIDDLE":  MouseBtnMiddle,
-		"BTN_SIDE":    MouseBtnForward,
-		"BTN_EXTRA":   MouseBtnBack,
-		"BTN_FORWARD": MouseBtnForward,
-		"BTN_BACK":    MouseBtnBack,
-		"BTN_TASK":    MouseBtnBack,
-	}
-
-	handelKeyEvents := func(events []*evdev.Event, devName string) {
-		if len(events) == 0 {
-			return
-		} else {
-			for _, event := range events {
-				keyCode := fmt.Sprintf("%d", event.Code)
-				keyName := joystickInfo[devName].Get("BTN").Get(keyCode).MustString()
-				if mappedKeyName, ok := joystickInfo[devName].Get("MAP_KEYBOARD").CheckGet(keyName); ok {
-					if "BTN" == mappedKeyName.MustString()[:3] { //鼠标
-						mouseCode := friendly_name_2_mouse[mappedKeyName.MustString()]
+	// 事件处理函数
+	handelKeyEvents := func(events []*evdev.Event, config *RuntimeControllerConfig) {
+		for _, event := range events {
+			keyName, ok := config.Btn[event.Code]
+			if !ok {
+				continue
+			}
+			if mappedKeyName, ok := config.MapKeyboard[keyName]; ok {
+				if len(mappedKeyName) >= 3 && mappedKeyName[:3] == "BTN" { //鼠标
+					mouseCode, ok := friendly_name_2_mouse[mappedKeyName]
+					if ok {
 						if event.Value == 0 {
 							mk.MouseBtnUp(mouseCode)
 						} else {
 							mk.MouseBtnDown(mouseCode)
 						}
-					} else {
+					}
+				} else {
+					if keyCode, ok := friendly_name_2_keycode[mappedKeyName]; ok {
 						if event.Value == 0 {
-							mk.KeyUp(byte(friendly_name_2_keycode[mappedKeyName.MustString()]))
+							mk.KeyUp(byte(keyCode))
 						} else {
-							mk.KeyDown(byte(friendly_name_2_keycode[mappedKeyName.MustString()]))
+							mk.KeyDown(byte(keyCode))
 						}
 					}
 				}
@@ -104,48 +169,35 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 		}
 	}
 
-	go func() {
-		counter := 0
-		for {
-			select {
-			case <-globalCloseSignal:
-				return
-			default:
-				// logger.Debugf("LS_X_val : %d, LS_Y_val : %d, RS_X_val : %d, RS_Y_val : %d, LT_val : %d, RT_val : %d", LS_X_val, LS_Y_val, RS_X_val, RS_Y_val, LT_val, RT_val)
-				counter += 1
-				counter %= 10
-				if counter == 0 && LS_X_val > -1 {
+	handelAbsEvents := func(events []*evdev.Event, config *RuntimeControllerConfig) {
+		lastDpadState := HAT0X_val + HAT0Y_val*3 + 4
 
-					mk.MouseMove((RS_X_val-512)*15/512, (RS_Y_val-512)*15/512, -1 * (LS_Y_val-512)*3/512)
-				}else{
-					mk.MouseMove((RS_X_val-512)*15/512, (RS_Y_val-512)*15/512, 0)
-				}
-				time.Sleep(time.Duration(4) * time.Millisecond)
-			}
-		}
-	}()
-
-	handelAbsEvents := func(events []*evdev.Event, devName string) {
-		if len(events) == 0 {
-			return
-		}
-		dpad_state := struct{X int32; Y int32}{HAT0X_val,HAT0Y_val}
 		for _, event := range events {
-			axisInfo := joystickInfo[devName].Get("ABS").Get(fmt.Sprintf("%d", event.Code))
-			valMini := int32(axisInfo.Get("range").GetIndex(0).MustInt())
-			valMax := int32(axisInfo.Get("range").GetIndex(1).MustInt())
-			switch axisInfo.Get("name").MustString() {
+			axisInfo, ok := config.Abs[event.Code]
+			if !ok {
+				continue
+			}
+			valMini := int32(axisInfo.Range[0])
+			valMax := int32(axisInfo.Range[1])
+
+			// 避免除以零
+			rangeDiff := valMax - valMini
+			if rangeDiff == 0 {
+				rangeDiff = 1
+			}
+
+			switch axisInfo.Name {
 			case "LS_X":
-				LS_X_val = ((event.Value - valMini) << 10) / (valMax - valMini)
+				LS_X_val = ((event.Value - valMini) << 10) / rangeDiff
 			case "LS_Y":
-				LS_Y_val = ((event.Value - valMini) << 10) / (valMax - valMini)
+				LS_Y_val = ((event.Value - valMini) << 10) / rangeDiff
 			case "RS_X":
-				RS_X_val = ((event.Value - valMini) << 10) / (valMax - valMini)
+				RS_X_val = ((event.Value - valMini) << 10) / rangeDiff
 			case "RS_Y":
-				RS_Y_val = ((event.Value - valMini) << 10) / (valMax - valMini)
+				RS_Y_val = ((event.Value - valMini) << 10) / rangeDiff
 			case "LT":
 				lastVal := LT_val
-				LT_val = ((event.Value - valMini) << 10) / (valMax - valMini)
+				LT_val = ((event.Value - valMini) << 10) / rangeDiff
 				if lastVal < 256 && LT_val >= 256 {
 					mk.MouseBtnDown(MouseBtnRight)
 				} else if lastVal >= 256 && LT_val < 256 {
@@ -153,7 +205,7 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 				}
 			case "RT":
 				lastVal := RT_val
-				RT_val = ((event.Value - valMini) << 10) / (valMax - valMini)
+				RT_val = ((event.Value - valMini) << 10) / rangeDiff
 				if lastVal < 256 && RT_val >= 256 {
 					mk.MouseBtnDown(MouseBtnLeft)
 				} else if lastVal >= 256 && RT_val < 256 {
@@ -165,32 +217,64 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 				HAT0Y_val = event.Value
 			}
 		}
-		dpad_now_state :=  struct{X int32; Y int32}{HAT0X_val,HAT0Y_val}
-		lastDpadState := dpad_state.X + dpad_state.Y * 3 + 4
-		nowDpadState := dpad_now_state.X + dpad_now_state.Y * 3 + 4
+
+		nowDpadState := HAT0X_val + HAT0Y_val*3 + 4
 		if lastDpadState != nowDpadState {
 			justPressed := DPAD_MAP[nowDpadState] &^ DPAD_MAP[lastDpadState]
 			justReleased := DPAD_MAP[lastDpadState] &^ DPAD_MAP[nowDpadState]
-			for index , bitName := range dpadBitName{
-				if justPressed & (1 << index) != 0 {
-					if mappedKeyName, ok := joystickInfo[devName].Get("MAP_KEYBOARD").CheckGet(bitName); ok {
-						logger.Debugf("按下 : %v", mappedKeyName.MustString())
-						mk.KeyDown(byte(friendly_name_2_keycode[mappedKeyName.MustString()]))
+			for index, bitName := range dpadBitName {
+				mask := int32(1 << index)
+				if justPressed&mask != 0 {
+					if mappedKeyName, ok := config.MapKeyboard[bitName]; ok {
+						if code, ok := friendly_name_2_keycode[mappedKeyName]; ok {
+							mk.KeyDown(byte(code))
+						}
 					}
 				}
-				if justReleased & (1 << index) != 0 {
-					if mappedKeyName, ok := joystickInfo[devName].Get("MAP_KEYBOARD").CheckGet(bitName); ok {
-						logger.Debugf("松开 : %v", mappedKeyName.MustString())
-						mk.KeyUp(byte(friendly_name_2_keycode[mappedKeyName.MustString()]))
+				if justReleased&mask != 0 {
+					if mappedKeyName, ok := config.MapKeyboard[bitName]; ok {
+						if code, ok := friendly_name_2_keycode[mappedKeyName]; ok {
+							mk.KeyUp(byte(code))
+						}
 					}
 				}
 			}
 		}
 	}
 
+	// 鼠标移动处理 Goroutine
+	go func() {
+		ticker := time.NewTicker(4 * time.Millisecond)
+		defer ticker.Stop()
+		counter := 0
+
+		for {
+			select {
+			case <-globalCloseSignal:
+				return
+			case <-ticker.C:
+				counter++
+				if counter >= 10 {
+					counter = 0
+				}
+				var dx, dy, dw int32
+				// dx = (RS_X_val - 512) * 15 / 512
+				// dy = (RS_Y_val - 512) * 15 / 512
+				dx = stickMapMouse(RS_X_val)
+				dy = stickMapMouse(RS_Y_val)
+				if counter == 0 {
+					dw = -1 * (LS_Y_val - 512) * 3 / 512
+				}
+				// 只有当有实际移动或滚动时才调用
+				if dx != 0 || dy != 0 || dw != 0 {
+					mk.MouseMove(dx, dy, dw)
+				}
+			}
+		}
+	}()
+
+	// 主事件循环
 	for {
-		keyEvents := make([]*evdev.Event, 0)
-		absEvents := make([]*evdev.Event, 0)
 		select {
 		case <-globalCloseSignal:
 			return
@@ -198,10 +282,14 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 			if eventPack == nil {
 				continue
 			}
-			if _, ok := joystickInfo[eventPack.devName]; !ok {
-				logger.Errorf("未找到 %s 的手柄配置文件", eventPack.devName)
+
+			config, ok := joystickInfo[eventPack.devName]
+			if !ok {
+				// logger.Errorf("未找到 %s 的手柄配置文件", eventPack.devName)
 				continue
 			}
+			keyEvents := make([]*evdev.Event, 0, len(eventPack.events))
+			absEvents := make([]*evdev.Event, 0, len(eventPack.events))
 			for _, event := range eventPack.events {
 				switch event.Type {
 				case evdev.EventKey:
@@ -209,8 +297,12 @@ func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, pater
 				case evdev.EventAbsolute:
 					absEvents = append(absEvents, event)
 				}
-				handelKeyEvents(keyEvents, eventPack.devName)
-				handelAbsEvents(absEvents, eventPack.devName)
+			}
+			if len(keyEvents) > 0 {
+				handelKeyEvents(keyEvents, config)
+			}
+			if len(absEvents) > 0 {
+				handelAbsEvents(absEvents, config)
 			}
 		}
 	}
