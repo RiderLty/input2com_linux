@@ -4,20 +4,107 @@ import (
 	"github.com/kenshaw/evdev"
 )
 
+type Pos [2][2]int32
+
 func initInputAdapter_LinuxInputs_Touchpad(mk mouseKeyboard, hotPlug bool, patern string) {
-	//接收 手柄事件，转为键鼠输出
+	//接收触摸板事件作为鼠标输出
+	//支持点击，滑动，触摸板按下，双指滚动
 	eventsCh := make(chan *eventPack, 10) // 增加缓冲
 	go autoDetectAndRead(eventsCh, patern, hotPlug, map[dev_type]bool{type_touch_pad: true})
 
+	button_state := map[uint16]int32{
+		BTN_TOUCH:          UP,
+		BTN_TOOL_FINGER:    UP,
+		BTN_TOOL_DOUBLETAP: UP,
+	}
+
+	current_finger := int32(0)
+	pos := Pos{{0, 0}, {0, 0}}
+
+	moveMouse := makeScaledMover(mk.MouseMove, 0.3, 0.3, 0.03)
+
 	handelKeyEvents := func(events []*evdev.Event) {
 		for _, event := range events {
-			logger.Infof("key event : %v", event)
+			// logger.Debugf("key event : %v", event)
+			//只要有按下 则BTN_TOUCH == 1
+			//全部松开   则BTN_TOUCH == 0
+			//同时有一个按下时候 BTN_TOOL_FINGER 也响应变为1
+			//从一个变为两个的时候 BTN_TOOL_FINGER = 0 ，同时BTN_TOOL_DOUBLETAP = 1
+			//从两个变为一个的时候 BTN_TOOL_FINGER = 1 ，同时BTN_TOOL_DOUBLETAP = 0
+			// if event.Code == BTN_TOUCH {
+			// 	logger.Infof("EV_KEY       BTN_TOUCH            %v", event.Value)
+			// } else if event.Code == BTN_TOOL_FINGER {
+			// 	logger.Infof("EV_KEY       BTN_TOOL_FINGER      %v", event.Value)
+			// } else if event.Code == BTN_TOOL_DOUBLETAP {
+			// 	logger.Infof("EV_KEY       BTN_TOOL_DOUBLETAP   %v", event.Value)
+			// }
+			switch event.Code {
+			case BTN_TOUCH, BTN_TOOL_FINGER, BTN_TOOL_DOUBLETAP:
+				button_state[event.Code] = event.Value
+			case BTN_MOUSE:
+				if event.Value == DOWN {
+					mk.MouseBtnDown(MouseBtnLeft)
+				} else {
+					mk.MouseBtnUp(MouseBtnLeft)
+				}
+			}
 		}
 	}
 
 	handelAbsEvents := func(events []*evdev.Event) {
+		last_pos := pos
 		for _, event := range events {
-			logger.Infof("abs event : %v", event)
+			logger.Debugf("abs event : %v", event)
+
+			switch event.Code {
+			case ABS_MT_SLOT:
+				current_finger = event.Value
+			case ABS_MT_TRACKING_ID:
+				if event.Value == -1 {
+					pos[current_finger] = [2]int32{-1, -1}
+				}
+			case ABS_MT_POSITION_X:
+				pos[current_finger][0] = event.Value
+			case ABS_MT_POSITION_Y:
+				pos[current_finger][1] = event.Value
+			}
+		}
+		if button_state[BTN_TOUCH] == DOWN {
+			if button_state[BTN_TOOL_FINGER] == DOWN {
+				// Find the active finger slot (not -1)
+				active_finger := current_finger
+				if pos[active_finger][0] == -1 || pos[active_finger][1] == -1 {
+					// Current finger is invalid, find the active one
+					for i := 0; i < 2; i++ {
+						if pos[i][0] != -1 && pos[i][1] != -1 {
+							active_finger = int32(i)
+							break
+						}
+					}
+				}
+
+				if last_pos[active_finger][0] == -1 {
+					last_pos[active_finger][0] = pos[active_finger][0]
+				}
+				if last_pos[active_finger][1] == -1 {
+					last_pos[active_finger][1] = pos[active_finger][1]
+				}
+				offset_x := pos[active_finger][0] - last_pos[active_finger][0]
+				offset_y := pos[active_finger][1] - last_pos[active_finger][1]
+				moveMouse(offset_x, offset_y, 0)
+			} else if button_state[BTN_TOOL_DOUBLETAP] == DOWN {
+				if last_pos[0][1] == -1 {
+					last_pos[0][1] = pos[0][1]
+				}
+				if last_pos[1][1] == -1 {
+					last_pos[1][1] = pos[1][1]
+				}
+
+				last_mid_y := (last_pos[0][1] + last_pos[1][1]) / 2
+				mid_y := (pos[0][1] + pos[1][1]) / 2
+				vertical_scroll := mid_y - last_mid_y
+				moveMouse(0, 0, vertical_scroll)
+			}
 		}
 	}
 	// 主事件循环

@@ -166,7 +166,7 @@ func main() {
 	}
 
 	if Cfg.Src.Inputs.Enabled {
-		go initInputAdapter_LinuxInputs(macroKB, Cfg.Src.Inputs.HotPlug, Cfg.Src.Inputs.Pattern)
+		go initInputAdapter_LinuxInputs_MouseKeyboard(macroKB, Cfg.Src.Inputs.HotPlug, Cfg.Src.Inputs.Pattern)
 		go initInputAdapter_LinuxInputs_Joystick(macroKB, Cfg.Src.Inputs.HotPlug, Cfg.Src.Inputs.Pattern)
 		go initInputAdapter_LinuxInputs_Touchpad(macroKB, Cfg.Src.Inputs.HotPlug, Cfg.Src.Inputs.Pattern)
 	}

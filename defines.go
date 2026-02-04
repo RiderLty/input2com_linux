@@ -36,6 +36,8 @@ const (
 	//-------------------------------appends-------------------------------//
 	absMtTouchMajor = 0x30
 	absMtWidthMajor = 0x32
+	DOWN            = 1
+	UP              = 0
 )
 
 //---------------------------------IOCTL--------------------------------------//
@@ -1038,4 +1040,33 @@ var friendly_name_2_keycode map[string]uint16 = map[string]uint16{
 	"BTN_FORWARD":          0x115,
 	"BTN_BACK":             0x116,
 	"BTN_TASK":             0x117,
+}
+
+func makeScaledMover(
+	moveFunc func(dx int32, dy int32, Wheel int32) error,
+	sensitivityX, sensitivityY, sensitivityWheel float64,
+) func(dx int32, dy int32, Wheel int32) error {
+	accumX := float64(0)
+	accumY := float64(0)
+	accumWheel := float64(0)
+	return func(dx int32, dy int32, Wheel int32) error {
+		accumX += float64(dx) * sensitivityX
+		accumY += float64(dy) * sensitivityY
+		accumWheel += float64(Wheel) * sensitivityWheel
+		logger.Infof("dx: %d, dy: %d, Wheel: %d, accumX: %f, accumY: %f, accumWheel: %f", dx, dy, Wheel, accumX, accumY, accumWheel)
+		moveX := int32(accumX)
+		moveY := int32(accumY)
+		moveW := int32(accumWheel)
+		if moveX != 0 || moveY != 0 || moveW != 0 {
+			err := moveFunc(moveX, moveY, moveW)
+			if err != nil {
+				return err
+			}
+			// 扣除已输出的整数部分，保留小数继续累积
+			accumX -= float64(moveX)
+			accumY -= float64(moveY)
+			accumWheel -= float64(moveW)
+		}
+		return nil
+	}
 }

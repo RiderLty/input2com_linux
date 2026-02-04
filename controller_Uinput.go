@@ -21,6 +21,8 @@ type EventMap struct {
 }
 
 const (
+	ABS_X              = 0x00
+	ABS_Y              = 0x01
 	ABS_MT_POSITION_X  = 0x35
 	ABS_MT_POSITION_Y  = 0x36
 	ABS_MT_SLOT        = 0x2F
@@ -35,6 +37,9 @@ const (
 	REL_HWHEEL         = 0x06
 	SYN_REPORT         = 0x00
 	BTN_TOUCH          = 0x14A
+	BTN_TOOL_FINGER    = 0x145
+	BTN_TOOL_DOUBLETAP = 0x14d
+	BTN_MOUSE          = 0x110
 )
 
 func makeEventsMMap(size int) EventMap {
