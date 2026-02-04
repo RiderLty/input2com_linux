@@ -25,19 +25,6 @@ func initInputAdapter_LinuxInputs_Touchpad(mk mouseKeyboard, hotPlug bool, pater
 
 	handelKeyEvents := func(events []*evdev.Event) {
 		for _, event := range events {
-			// logger.Debugf("key event : %v", event)
-			//只要有按下 则BTN_TOUCH == 1
-			//全部松开   则BTN_TOUCH == 0
-			//同时有一个按下时候 BTN_TOOL_FINGER 也响应变为1
-			//从一个变为两个的时候 BTN_TOOL_FINGER = 0 ，同时BTN_TOOL_DOUBLETAP = 1
-			//从两个变为一个的时候 BTN_TOOL_FINGER = 1 ，同时BTN_TOOL_DOUBLETAP = 0
-			// if event.Code == BTN_TOUCH {
-			// 	logger.Infof("EV_KEY       BTN_TOUCH            %v", event.Value)
-			// } else if event.Code == BTN_TOOL_FINGER {
-			// 	logger.Infof("EV_KEY       BTN_TOOL_FINGER      %v", event.Value)
-			// } else if event.Code == BTN_TOOL_DOUBLETAP {
-			// 	logger.Infof("EV_KEY       BTN_TOOL_DOUBLETAP   %v", event.Value)
-			// }
 			switch event.Code {
 			case BTN_TOUCH, BTN_TOOL_FINGER, BTN_TOOL_DOUBLETAP:
 				button_state[event.Code] = event.Value
@@ -55,7 +42,6 @@ func initInputAdapter_LinuxInputs_Touchpad(mk mouseKeyboard, hotPlug bool, pater
 		last_pos := pos
 		for _, event := range events {
 			logger.Debugf("abs event : %v", event)
-
 			switch event.Code {
 			case ABS_MT_SLOT:
 				current_finger = event.Value
@@ -71,10 +57,8 @@ func initInputAdapter_LinuxInputs_Touchpad(mk mouseKeyboard, hotPlug bool, pater
 		}
 		if button_state[BTN_TOUCH] == DOWN {
 			if button_state[BTN_TOOL_FINGER] == DOWN {
-				// Find the active finger slot (not -1)
 				active_finger := current_finger
 				if pos[active_finger][0] == -1 || pos[active_finger][1] == -1 {
-					// Current finger is invalid, find the active one
 					for i := 0; i < 2; i++ {
 						if pos[i][0] != -1 && pos[i][1] != -1 {
 							active_finger = int32(i)

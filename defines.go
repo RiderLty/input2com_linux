@@ -1053,7 +1053,7 @@ func makeScaledMover(
 		accumX += float64(dx) * sensitivityX
 		accumY += float64(dy) * sensitivityY
 		accumWheel += float64(Wheel) * sensitivityWheel
-		logger.Infof("dx: %d, dy: %d, Wheel: %d, accumX: %f, accumY: %f, accumWheel: %f", dx, dy, Wheel, accumX, accumY, accumWheel)
+		// logger.Infof("dx: %d, dy: %d, Wheel: %d, accumX: %f, accumY: %f, accumWheel: %f", dx, dy, Wheel, accumX, accumY, accumWheel)
 		moveX := int32(accumX)
 		moveY := int32(accumY)
 		moveW := int32(accumWheel)
