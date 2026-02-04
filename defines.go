@@ -103,6 +103,11 @@ func ioctl(fd uintptr, name int, data uintptr) error {
 	return nil
 }
 
+const (
+	_INPUT_PROP_POINTER = 0 // 位号
+	_INPUT_PROP_DIRECT  = 1
+)
+
 //---------------------------------Input--------------------------------------//
 
 type InputID struct {
@@ -758,9 +763,10 @@ const (
 	type_mouse          = dev_type(0)
 	type_keyboard       = dev_type(1)
 	type_joystick       = dev_type(2)
-	type_touch          = dev_type(3)
-	type_motion_sensors = dev_type(4)
-	type_unknown        = dev_type(5)
+	type_touch_screen   = dev_type(3)
+	type_touch_pad      = dev_type(4)
+	type_motion_sensors = dev_type(5)
+	type_unknown        = dev_type(6)
 )
 
 func eventPacker(events []evdev.Event) []byte {

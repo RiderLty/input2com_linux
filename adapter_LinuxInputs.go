@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"time"
+	"unsafe"
 
 	"github.com/kenshaw/evdev"
 )
@@ -54,17 +55,7 @@ func devReader(eventReader chan *eventPack, index int) {
 	}
 }
 
-type devType uint8
-
-const (
-	typeMouse    = devType(0)
-	typeKeyboard = devType(1)
-	typeJoystick = devType(2)
-	typeTouch    = devType(3)
-	typeUnknown  = devType(4)
-)
-
-func checkDevType(dev *evdev.Evdev) devType {
+func checkDevType(dev *evdev.Evdev, fd *os.File) dev_type {
 	abs := dev.AbsoluteTypes()
 	key := dev.KeyTypes()
 	rel := dev.RelativeTypes()
@@ -73,53 +64,49 @@ func checkDevType(dev *evdev.Evdev) devType {
 	_, MTSlot := abs[evdev.AbsoluteMTSlot]
 	_, MTTrackingID := abs[evdev.AbsoluteMTTrackingID]
 	if MTPositionX && MTPositionY && MTSlot && MTTrackingID {
-		return typeTouch //触屏检测这几个abs类型即可
+		var bits int32
+		ioctl(fd.Fd(), EVIOCGPROP(), uintptr(unsafe.Pointer(&bits)))
+		if bits&(1<<_INPUT_PROP_DIRECT) != 0 {
+			return type_touch_screen
+		}
+		if bits&(1<<_INPUT_PROP_POINTER) != 0 {
+			return type_touch_pad
+		}
+		return type_unknown
+		// return type_touch_screen //触屏检测这几个abs类型即可
 	}
 	_, RelX := rel[evdev.RelativeX]
 	_, RelY := rel[evdev.RelativeY]
-	_, HWheel := rel[evdev.RelativeHWheel]
+	_, Wheel := rel[evdev.RelativeWheel]
 	_, MouseLeft := key[evdev.BtnLeft]
 	_, MouseRight := key[evdev.BtnRight]
-	_, MouseMiddle := key[evdev.BtnMiddle]
-	if RelX && RelY && HWheel && MouseLeft && MouseRight && MouseMiddle {
-		return typeMouse //鼠标 检测XY 滚轮 左右中键
+	if RelX && RelY && Wheel && MouseLeft && MouseRight {
+		return type_mouse //鼠标 检测XY 滚轮 左右键
 	}
-	keyboardKeys := true
+	keyboard_keys := true
 	for i := evdev.KeyEscape; i <= evdev.KeyScrollLock; i++ {
 		_, ok := key[i]
-		keyboardKeys = keyboardKeys && ok
+		keyboard_keys = keyboard_keys && ok
 	}
-	if keyboardKeys {
-		return typeKeyboard //键盘 检测keycode(1-70)
+	if keyboard_keys {
+		return type_keyboard //键盘 检测keycode(1-70)
 	}
 
-	axisCount := 0
-	for i := evdev.AbsoluteX; i <= evdev.AbsoluteRZ; i++ {
-		_, ok := abs[i]
-		if ok {
-			axisCount++
+	axis_count := len(abs)
+	btn_count := len(key)
+	if axis_count >= 4 { //检测轴的数量是否有两个摇杆 可能存在误报
+		if btn_count == 0 { //如果大于4轴，且没有按键，认为是运动传感器
+			return type_motion_sensors
+		} else if btn_count > 8 {
+			return type_joystick //按键大于8个
 		}
 	}
-	LsRs := axisCount >= 4
-
-	keyCount := 0
-	for i := evdev.BtnA; i <= evdev.BtnZ; i++ {
-		_, ok := key[i]
-		if ok {
-			keyCount++
-		}
-	}
-	ABXY := keyCount >= 4
-
-	if LsRs && ABXY {
-		return typeJoystick //手柄 检测LS,RS A,B,X,Y
-	}
-	return typeUnknown
+	return type_unknown
 }
 
-func getPossibleDeviceIndexes(skipList map[int]bool) map[int]devType {
+func getPossibleDeviceIndexes(skipList map[int]bool) map[int]dev_type {
 	files, _ := os.ReadDir("/dev/input")
-	result := make(map[int]devType)
+	result := make(map[int]dev_type)
 	for _, file := range files {
 		if file.IsDir() {
 			continue
@@ -141,8 +128,8 @@ func getPossibleDeviceIndexes(skipList map[int]bool) map[int]devType {
 			}
 			d := evdev.Open(fd)
 			defer d.Close()
-			devType := checkDevType(d)
-			if devType != typeUnknown {
+			devType := checkDevType(d, fd)
+			if devType != type_unknown {
 				result[index] = devType
 			}
 		}
@@ -160,7 +147,7 @@ func getDevNameByIndex(index int) string {
 	return d.Name()
 }
 
-func autoDetectAndRead(eventChan chan *eventPack, patern string, loop bool, types map[devType]bool) {
+func autoDetectAndRead(eventChan chan *eventPack, patern string, loop bool, types map[dev_type]bool) {
 	//自动检测设备并读取 循环检测 自动管理设备插入移除
 	devices := make(map[int]bool)
 	for {
@@ -169,12 +156,13 @@ func autoDetectAndRead(eventChan chan *eventPack, patern string, loop bool, type
 			return
 		default:
 			autoDetectResult := getPossibleDeviceIndexes(devices)
-			devTypeFriendlyName := map[devType]string{
-				typeMouse:    "鼠标",
-				typeKeyboard: "键盘",
-				typeJoystick: "手柄",
-				typeTouch:    "触屏",
-				typeUnknown:  "未知",
+			devTypeFriendlyName := map[dev_type]string{
+				type_mouse:          "鼠标",
+				type_keyboard:       "键盘",
+				type_joystick:       "手柄",
+				type_touch_pad:      "触摸板",
+				type_motion_sensors: "运动传感器",
+				type_unknown:        "未知",
 			}
 			for index, devType := range autoDetectResult {
 				devName := getDevNameByIndex(index)
@@ -210,7 +198,7 @@ func initInputAdapter_LinuxInputs(mk mouseKeyboard, hotPlug bool, patern string)
 	// 事件会使用mk的方法处理
 	// 使用携程启用
 	eventsCh := make(chan *eventPack) //主要设备事件管道
-	go autoDetectAndRead(eventsCh, patern, hotPlug, map[devType]bool{typeMouse: true, typeKeyboard: true})
+	go autoDetectAndRead(eventsCh, patern, hotPlug, map[dev_type]bool{type_mouse: true, type_keyboard: true})
 	handelRelEvent := func(x, y, HWhell, Wheel int32) {
 		if x != 0 || y != 0 || HWhell != 0 || Wheel != 0 {
 			if !drop_move {

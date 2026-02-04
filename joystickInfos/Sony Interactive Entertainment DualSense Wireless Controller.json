@@ -96,7 +96,9 @@
         "BTN_DPAD_RIGHT": "KEY_RIGHT",
         "BTN_DPAD_DOWN": "KEY_DOWN",
         "BTN_A": "KEY_ENTER",
-        "BTN_B": "KEY_BACK",
+        "BTN_B": "KEY_ESC",
+        "BTN_X": "KEY_VOLUMEDOWN",
+        "BTN_Y": "KEY_VOLUMEUP",
         "BTN_SELECT": "KEY_COMPOSE",
         "BTN_THUMBL": "KEY_HOME"
     }

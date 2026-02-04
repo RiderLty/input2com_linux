@@ -76,7 +76,7 @@ func stickMapMouse(val int32) int32 {
 func initInputAdapter_LinuxInputs_Joystick(mk mouseKeyboard, hotPlug bool, patern string) {
 	//接收 手柄事件，转为键鼠输出
 	eventsCh := make(chan *eventPack, 10) // 增加缓冲
-	go autoDetectAndRead(eventsCh, patern, hotPlug, map[devType]bool{typeJoystick: true})
+	go autoDetectAndRead(eventsCh, patern, hotPlug, map[dev_type]bool{type_joystick: true})
 
 	joystickInfo := make(map[string]*RuntimeControllerConfig)
 	path, _ := exec.LookPath(os.Args[0])
