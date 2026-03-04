@@ -55,11 +55,21 @@ func (mk *makcuMouseKeyboard) MouseBtnUp(keyCode byte) error {
 	}
 	return nil
 }
+
 func (mk *makcuMouseKeyboard) KeyDown(keyCode byte) error {
-	mk.makcu.writer <- []byte(fmt.Sprintf("km.down(%d)\r", keyCode))
+	mk.makcu.writer <- []byte(fmt.Sprintf("km.isdown(%d)", keyCode))
 	return nil
 }
 func (mk *makcuMouseKeyboard) KeyUp(keyCode byte) error {
-	mk.makcu.writer <- []byte(fmt.Sprintf("km.up(%d)\r", keyCode))
+	mk.makcu.writer <- []byte(fmt.Sprintf("km.isdown(%d)", keyCode))
 	return nil
 }
+
+// func (mk *makcuMouseKeyboard) KeyDown(keyCode byte) error {
+// 	mk.makcu.writer <- []byte(fmt.Sprintf("km.down(%s)\r", "'a'"))
+// 	return nil
+// }
+// func (mk *makcuMouseKeyboard) KeyUp(keyCode byte) error {
+// 	mk.makcu.writer <- []byte(fmt.Sprintf("km.up(%s)\r", "'a'"))
+// 	return nil
+// }

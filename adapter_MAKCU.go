@@ -102,12 +102,14 @@ func getMackcuInstance(portName string, baudRate int) (*makcu, error) {
 			case <-globalCloseSignal:
 				return
 			case data := <-writerChan:
+				logger.Debugf("MAKCU Port write: %v", string(data))
 				_, err := port.Write(data)
 				if err != nil {
 					logger.Errorf("MAKCU Port write error: %v", err)
 				}
+			case data := <-readerChan:
+				logger.Debugf("MAKCU Port read: %v", string(data))
 			}
-
 		}
 	})()
 	go (func() {

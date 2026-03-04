@@ -122,6 +122,12 @@ func configInit() {
 		},
 		{},
 	}
+	preConfigDict["Warframe"] = [2]map[byte]string{
+		{
+			MouseBtnBack: "dante_2_2_4",
+		},
+		{},
+	}
 }
 
 type macro struct {
@@ -483,6 +489,44 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 			global_moved_y = 0
 			<-ch
 			logger.Errorf("moved(%v,%v)", global_moved_x, global_moved_y)
+		},
+	}
+
+	danteRunningFlag := false
+	macros["dante_2_2_4"] = macro{
+		Name:        "Dante_2_2_4",
+		Description: "Dante_2_2_4",
+		fn: func(mk *macroMouseKeyboard, ch chan bool) {
+			logger.Warnf("danteRunningFlag: %v", danteRunningFlag)
+			danteRunningFlag = !danteRunningFlag
+			if danteRunningFlag {
+				go func() {
+					for {
+						mk.ctrl.KeyDown(Key2)
+						time.Sleep(10 * time.Millisecond)
+						mk.ctrl.KeyUp(Key2)
+						time.Sleep(500 * time.Millisecond)
+						if !danteRunningFlag {
+							return
+						}
+						mk.ctrl.KeyDown(Key2)
+						time.Sleep(10 * time.Millisecond)
+						mk.ctrl.KeyUp(Key2)
+						time.Sleep(500 * time.Millisecond)
+						if !danteRunningFlag {
+							return
+						}
+						mk.ctrl.KeyDown(Key4)
+						time.Sleep(10 * time.Millisecond)
+						mk.ctrl.KeyUp(Key4)
+						time.Sleep(500 * time.Millisecond)
+						if !danteRunningFlag {
+							return
+						}
+					}
+				}()
+			}
+			<-ch
 		},
 	}
 

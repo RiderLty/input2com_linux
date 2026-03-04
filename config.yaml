@@ -1,4 +1,4 @@
-debug: true
+debug: false
 
 server:
   port: 9264
@@ -6,8 +6,8 @@ server:
 src:
   inputs:
     enabled: true
-    hotPlug: true
-    pattern: ".*"
+    hotPlug: false
+    pattern: ".*EWE.*"
   makcu:
     enabled: false
     baudrate: 4000000
@@ -18,7 +18,7 @@ src:
 dst:
   kcom5:
     baudrate: 2000000
-    ttyPath: /dev/ttyUSB1
+    ttyPath: /dev/ttyUSB0
     sbdesc: 
     csdesc: 
     cpdesc: 
@@ -34,6 +34,6 @@ dst:
   uinput:
     deviceName: input2com
   usbgadget:
-    mouseFile: /dev/hidg2
-    keyboardFile: /dev/hidg1
-usingDst: usbgadget
+    mouseFile: /dev/input/hidg0
+    keyboardFile: /dev/input/hidg1
+usingDst: makcu
