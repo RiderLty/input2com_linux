@@ -68,6 +68,13 @@ func configInit() {
 		},
 		{},
 	}
+	preConfigDict["左键AI吸附"] = [2]map[byte]string{
+		{
+			MouseBtnLeft:    "ai_aim",
+			MouseBtnForward: "btn_left",
+		},
+		{},
+	}
 	preConfigDict["手游_PKM"] = [2]map[byte]string{
 		{
 			MouseBtnLeft:    "手游_PKM",
@@ -228,18 +235,6 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 			}
 		},
 	}
-
-	// macros["K437_downdrag"] = macro{
-	// 	Name:        "K437压枪",
-	// 	Description: "K437盲人镜，站立模式下压枪",
-	// 	fn:          downDragMacroFactory("./config/K437.txt"),
-	// }
-
-	// macros["老王的PKM"] = macro{
-	// 	Name:        "老王的PKM",
-	// 	Description: "老王给的红点PKM 站立压枪",
-	// 	fn:          downDragMacroFactory("./config/老王的PKM.txt"),
-	// }
 
 	macros["手游_PKM"] = macro{
 		Name:        "老王的PKM",
@@ -463,6 +458,7 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 						counter += 1
 						time.Sleep(time.Duration(1) * time.Millisecond)
 						if counter > 300 && udp_ints[2] != 0 && udp_ints[3] != 0 && float64(abs(udp_ints[0]))/float64(udp_ints[2]) < 0.5 && float64(abs(udp_ints[1]))/float64(udp_ints[3]) < 0.5 {
+							// 逻辑 x到中心距离（udp_ints[0]）除以 识别目标的宽度（udp_ints[2]）小于0.5    且      y到中心距离（u_int[1）除以高度小于0.5  则触发
 							counter = 0
 							mk.ctrl.MouseBtnDown(MouseBtnLeft)
 							time.Sleep(time.Duration(16) * time.Millisecond)
@@ -478,6 +474,32 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 				switchFlasg <- false
 			}
 
+		},
+	}
+
+	macros["ai_aim"] = macro{
+		Name:        "AI自动瞄准",
+		Description: "按住左键，则自瞄",
+		fn: func(mk *macroMouseKeyboard, ch chan bool) {
+			mk.ctrl.MouseBtnDown(MouseBtnLeft)
+			last_x := udp_ints[0]
+			for {
+				select {
+				case <-ch:
+					mk.ctrl.MouseBtnUp(MouseBtnLeft)
+					return
+				default:
+					UDP_COND.Wait()
+					logger.Infof("awake")
+					if abs(abs(udp_ints[0])-abs(last_x)) > 1 {
+						last_x = udp_ints[0]
+						mk.ctrl.MouseMove(int32(float64(udp_ints[0])*0.5), int32(float64(udp_ints[1])*0.5), 0)
+						// mk.ctrl.MouseBtnUp(MouseBtnLeft)
+						// <-ch
+						// return
+					}
+				}
+			}
 		},
 	}
 

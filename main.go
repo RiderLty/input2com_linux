@@ -6,11 +6,19 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/spf13/viper"
 )
+
+type TickBroadcaster struct {
+	mu   sync.Mutex
+	cond *sync.Cond
+}
+
+var UDP_COND = sync.NewCond(&sync.Mutex{})
 
 var globalCloseSignal = make(chan bool) //仅会在程序退出时关闭  不用于其他用途
 
@@ -49,6 +57,8 @@ func udp_listener(port int) {
 				udp_ints[i] = int32(binary.LittleEndian.Uint32(pack[start : start+4]))
 			}
 			udp_last = pack[24]
+			UDP_COND.Broadcast()
+			logger.Errorf("udp_last %v", udp_ints)
 		}
 	}
 }
