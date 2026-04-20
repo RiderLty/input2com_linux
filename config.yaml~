@@ -26,7 +26,7 @@ dst:
   makcu:
     baudrate: 4000000
     ttyPath: /dev/ttyACM0  
-  udp:
+udp:
     ip: 192.168.3.64
     port: 61069
   uds:

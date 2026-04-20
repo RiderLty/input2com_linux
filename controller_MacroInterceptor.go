@@ -39,6 +39,13 @@ func writeIterationData(data [][3]int32) error {
 var global_moved_x int64 = 0
 var global_moved_y int64 = 0
 
+type AimBotResult struct {
+	width   int32
+	height  int32
+	offsetX int32
+	offsetY int32
+}
+
 type macroMouseKeyboard struct {
 	mouseBtnArgs map[byte]chan bool
 	keyArgs      map[byte]chan bool
@@ -48,6 +55,8 @@ type macroMouseKeyboard struct {
 	iterState    bool             // 迭代压枪状态
 	iterChan     chan [2]int32    // 迭代压枪数据通道
 	iterLast     [][3]int32       // 迭代压枪数据通道，记录上一次的移动数据
+	aimbot       *AimBotResult    //aimBot的识别结果
+	aimBotNotify chan bool        //aimBot的识别结果通知通道,每次接收到了最新的识别结果,就会尝试发送一个
 }
 
 func abs(x int32) int32 {
@@ -152,8 +161,8 @@ var drop_move = false
 
 func (mk *macroMouseKeyboard) move_once_auto() {
 	//0 1 2 3
-	move_x := udp_ints[0] * 1315 / 529
-	move_y := udp_ints[1] * 1315 / 529
+	move_x := mk.aimbot.offsetX * 1315 / 529
+	move_y := mk.aimbot.offsetY * 1315 / 529
 	mk.MouseMove(move_x, move_y, 0)
 	logger.Errorf("auto move %v,%v", move_x, move_y)
 }
@@ -339,12 +348,11 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 				default:
 					counter += 1
 					time.Sleep(time.Duration(1) * time.Millisecond)
-					if counter > 420 && udp_ints[2] != 0 && udp_ints[3] != 0 && float64(abs(udp_ints[0]))/float64(udp_ints[2]) < 0.5 && float64(abs(udp_ints[1]))/float64(udp_ints[3]) < 0.5 {
+					if counter > 420 && mk.aimbot.width != 0 && mk.aimbot.height != 0 && float64(abs(mk.aimbot.offsetX))/float64(mk.aimbot.width) < 0.5 && float64(abs(mk.aimbot.offsetY))/float64(mk.aimbot.height) < 0.5 {
 						counter = 0
 						mk.ctrl.MouseBtnUp(MouseBtnLeft)
 						time.Sleep(time.Duration(16) * time.Millisecond)
 						mk.ctrl.MouseBtnDown(MouseBtnLeft)
-						logger.Warnf("%v (%v)", udp_ints, udp_last)
 					}
 				}
 
@@ -358,14 +366,14 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 		Description: "点击左键一次，然后当识别变化时显示时间差",
 		fn: func(mk *macroMouseKeyboard, ch chan bool) {
 			mk.ctrl.MouseBtnDown(MouseBtnLeft)
-			old_res := fmt.Sprintf("%v", udp_ints)
+			old_res := fmt.Sprintf("%v", mk.aimbot)
 			start := time.Now().UnixMicro()
 			logger.Warnf("当前值%v", old_res)
 			for {
-				if old_res != fmt.Sprintf("%v", udp_ints) {
+				if old_res != fmt.Sprintf("%v", mk.aimbot) {
 					end := time.Now().UnixMicro()
 					logger.Errorf("used %v ms", (end-start)/1000)
-					logger.Warnf("变化为 %v (%v)", udp_ints, udp_last)
+					logger.Warnf("变化为 %v", mk.aimbot)
 					break
 				}
 			}
@@ -397,7 +405,6 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 					case <-releaseFlag:
 						counter = 0
 						drop_move = true
-						// mk.move_once_auto()
 						time.Sleep(time.Duration(3) * time.Millisecond)
 						mk.ctrl.MouseBtnUp(MouseBtnLeft)
 						drop_move = false
@@ -407,7 +414,7 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 					default:
 						counter += 1
 						time.Sleep(time.Duration(1) * time.Millisecond)
-						if counter > 420 && udp_ints[2] != 0 && udp_ints[3] != 0 && float64(abs(udp_ints[0]))/float64(udp_ints[2]) < 0.5 && float64(abs(udp_ints[1]))/float64(udp_ints[3]) < 0.5 {
+						if counter > 420 && mk.aimbot.width != 0 && mk.aimbot.height != 0 && float64(abs(mk.aimbot.offsetX))/float64(mk.aimbot.width) < 0.5 && float64(abs(mk.aimbot.offsetY))/float64(mk.aimbot.height) < 0.5 {
 							counter = 0
 							drop_move = true
 							// mk.move_once_auto()
@@ -415,7 +422,6 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 							drop_move = false
 							time.Sleep(time.Duration(16) * time.Millisecond)
 							mk.ctrl.MouseBtnDown(MouseBtnLeft)
-							logger.Warnf("%v (%v)", udp_ints, udp_last)
 						}
 					}
 
@@ -457,13 +463,13 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 					default:
 						counter += 1
 						time.Sleep(time.Duration(1) * time.Millisecond)
-						if counter > 300 && udp_ints[2] != 0 && udp_ints[3] != 0 && float64(abs(udp_ints[0]))/float64(udp_ints[2]) < 0.5 && float64(abs(udp_ints[1]))/float64(udp_ints[3]) < 0.5 {
+						if counter > 300 && mk.aimbot.width != 0 && mk.aimbot.height != 0 && float64(abs(mk.aimbot.offsetX))/float64(mk.aimbot.width) < 0.5 && float64(abs(mk.aimbot.offsetY))/float64(mk.aimbot.height) < 0.5 {
 							// 逻辑 x到中心距离（udp_ints[0]）除以 识别目标的宽度（udp_ints[2]）小于0.5    且      y到中心距离（u_int[1）除以高度小于0.5  则触发
 							counter = 0
 							mk.ctrl.MouseBtnDown(MouseBtnLeft)
 							time.Sleep(time.Duration(16) * time.Millisecond)
 							mk.ctrl.MouseBtnUp(MouseBtnLeft)
-							logger.Warnf("%v (%v)", udp_ints, udp_last)
+							logger.Warnf("用户发射")
 						}
 					}
 
@@ -478,26 +484,53 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 	}
 
 	macros["ai_aim"] = macro{
-		Name:        "AI自动瞄准",
-		Description: "按住左键，则自瞄",
+		Name:        "AI高频自动瞄准(300Hz)",
+		Description: "针对高刷新率识别优化，低延迟追踪",
 		fn: func(mk *macroMouseKeyboard, ch chan bool) {
-			mk.ctrl.MouseBtnDown(MouseBtnLeft)
-			last_x := udp_ints[0]
+			var remainderX, remainderY float64
+			var lastOffsetX, lastOffsetY int32
+
+			// 比例因子（建议根据分辨率微调）
+			const scale = 1315.0 / 529.0
+
 			for {
 				select {
 				case <-ch:
-					mk.ctrl.MouseBtnUp(MouseBtnLeft)
 					return
-				default:
-					UDP_COND.Wait()
-					logger.Infof("awake")
-					if abs(abs(udp_ints[0])-abs(last_x)) > 1 {
-						last_x = udp_ints[0]
-						mk.ctrl.MouseMove(int32(float64(udp_ints[0])*0.5), int32(float64(udp_ints[1])*0.5), 0)
-						// mk.ctrl.MouseBtnUp(MouseBtnLeft)
-						// <-ch
-						// return
+				case <-mk.aimBotNotify: // 300Hz 下这里每 3ms 就会触发一次
+					currX := mk.aimbot.offsetX
+					currY := mk.aimbot.offsetY
+
+					// 1. 过滤极其微小的抖动（对于 300Hz，过滤阈值可以设小一点）
+					if abs32(currX-lastOffsetX) < 2 && abs32(currY-lastOffsetY) < 2 {
+						continue
 					}
+
+					// 2. 计算本次需要移动的总量
+					// 在 300Hz 下，我们不需要内部再做平滑循环，因为 3ms 后的下一次 Notify
+					// 本身就是最好的“下一帧”
+					targetX := float64(currX) * scale
+					targetY := float64(currY) * scale
+
+					// 3. 应用平滑系数 (Smoothing Factor)
+					// 300Hz 下如果全速移动可能会太快，乘以 0.4~0.7 让追踪更丝滑
+					// 这个值越大，跟手越快；越小，越稳。
+					smoothFactor := 0.6
+
+					// 4. 计算本次步进并处理余数
+					stepX := (targetX * smoothFactor) + remainderX
+					moveX := int32(stepX)
+					remainderX = stepX - float64(moveX)
+
+					stepY := (targetY * smoothFactor) + remainderY
+					moveY := int32(stepY)
+					remainderY = stepY - float64(moveY)
+
+					// 5. 硬件指令下发
+					if moveX != 0 || moveY != 0 {
+						mk.ctrl.MouseMove(moveX, moveY, 0)
+					}
+					lastOffsetX, lastOffsetY = currX, currY
 				}
 			}
 		},
@@ -654,6 +687,14 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 			}
 		},
 	}
+	aimBotResult := &AimBotResult{
+		width:   0,
+		height:  0,
+		offsetX: 0,
+		offsetY: 0,
+	}
+	aimBotNotifyChan := make(chan bool)
+	go initInputAdapter_AimBot(9321, aimBotResult, aimBotNotifyChan)
 	return &macroMouseKeyboard{
 		mouseBtnArgs: mouseBtnArgs,
 		keyArgs:      keyArgs,
@@ -662,8 +703,9 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 		iterLock:     sync.Mutex{},
 		iterState:    false,
 		iterChan:     make(chan [2]int32),
+		aimbot:       aimBotResult,
+		aimBotNotify: aimBotNotifyChan,
 	}
-
 }
 
 func (mk *macroMouseKeyboard) MouseMove(dx, dy, Wheel int32) error {

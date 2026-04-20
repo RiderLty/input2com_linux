@@ -1,67 +1,16 @@
 package main
 
 import (
-	"encoding/binary"
 	"fmt"
-	"net"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
 	"github.com/spf13/viper"
 )
 
-type TickBroadcaster struct {
-	mu   sync.Mutex
-	cond *sync.Cond
-}
-
-var UDP_COND = sync.NewCond(&sync.Mutex{})
-
 var globalCloseSignal = make(chan bool) //仅会在程序退出时关闭  不用于其他用途
-
-var udp_ints [6]int32
-var udp_last byte
-
-func udp_listener(port int) {
-	listen, err := net.ListenUDP("udp", &net.UDPAddr{
-		IP:   net.IPv4(0, 0, 0, 0),
-		Port: port,
-	})
-	if err != nil {
-		logger.Errorf("udp error : %v", err)
-		return
-	}
-	defer listen.Close()
-
-	recv_ch := make(chan []byte)
-	go func() {
-		for {
-			var buf [1024]byte
-			n, _, err := listen.ReadFromUDP(buf[:])
-			if err != nil {
-				break
-			}
-			recv_ch <- buf[:n]
-		}
-	}()
-	for {
-		select {
-		case <-globalCloseSignal:
-			return
-		case pack := <-recv_ch:
-			for i := 0; i < 6; i++ {
-				start := i * 4
-				udp_ints[i] = int32(binary.LittleEndian.Uint32(pack[start : start+4]))
-			}
-			udp_last = pack[24]
-			UDP_COND.Broadcast()
-			logger.Errorf("udp_last %v", udp_ints)
-		}
-	}
-}
 
 type Config struct {
 	Debug  bool `mapstructure:"debug"`
@@ -198,7 +147,6 @@ func main() {
 	if Cfg.Src.UDP.Enabled {
 		go initInputAdapter_UDP(macroKB, Cfg.Src.UDP.Port)
 	}
-	go udp_listener(9321)
 	exitChan := make(chan os.Signal)
 	signal.Notify(exitChan, os.Interrupt, os.Kill, syscall.SIGTERM)
 	<-exitChan
