@@ -5,6 +5,7 @@ import {
 } from '@mui/material'
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep'
 import EditNoteIcon from '@mui/icons-material/EditNote'
+import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import { usePreConfig, useActiveConfig, useRecoilInput } from './api'
 
 function Tag({ label, color = 'default', sx = {} }) {
@@ -76,8 +77,18 @@ function ConfigPanel() {
   const { data, loading, error } = usePreConfig()
   const { active, setActive, loading: activeLoading } = useActiveConfig()
   const [applying, setApplying] = useState(null)
+  const [restarting, setRestarting] = useState(false)
 
-  const configs = useMemo(() => Object.keys(data), [data])
+  const configs = useMemo(() => {
+    const keys = Object.keys(data)
+    const isAscii = (s) => s.charCodeAt(0) < 128
+    return keys.sort((a, b) => {
+      const sa = isAscii(a) ? 0 : 1
+      const sb = isAscii(b) ? 0 : 1
+      if (sa !== sb) return sa - sb
+      return a.localeCompare(b, 'zh')
+    })
+  }, [data])
 
   const handleApply = async (name) => {
     setApplying(name)
@@ -104,6 +115,15 @@ function ConfigPanel() {
     } finally {
       setApplying(null)
     }
+  }
+
+  const handleRestart = () => {
+    setRestarting(true)
+    fetch('/api/restart').catch(() => {})
+    // 定时刷新页面，服务器重启后自动恢复
+    const timer = setInterval(() => {
+      fetch('/').then(() => { clearInterval(timer); window.location.reload() }).catch(() => {})
+    }, 1000)
   }
 
   if (loading || activeLoading) {
@@ -137,8 +157,8 @@ function ConfigPanel() {
         </Typography>
       </Box>
 
-      {/* 清空按钮 */}
-      <Box sx={{ display: 'flex', justifyContent: 'center', mb: 4 }}>
+      {/* 清空/重启按钮 */}
+      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, mb: 4 }}>
         <Box
           onClick={() => !isClearing && handleClear()}
           sx={{
@@ -172,6 +192,39 @@ function ConfigPanel() {
             {isClearing ? '清空中...' : '清空所有配置'}
           </Typography>
           {isClearActive && <Tag label="当前" color="error" sx={{ ml: 1 }} />}
+        </Box>
+        <Box
+          onClick={() => !restarting && handleRestart()}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            px: 4,
+            py: 1.5,
+            borderRadius: 2,
+            cursor: restarting ? 'wait' : 'pointer',
+            userSelect: 'none',
+            border: 2,
+            borderColor: 'warning.main',
+            bgcolor: 'transparent',
+            color: 'warning.main',
+            transition: 'all 0.25s cubic-bezier(.4,0,.2,1)',
+            opacity: restarting ? 0.5 : 1,
+            '&:hover': {
+              borderColor: 'warning.dark',
+              color: 'warning.dark',
+              bgcolor: 'rgba(237,108,2,0.06)',
+              transform: restarting ? 'none' : 'translateY(-2px)',
+            },
+            '&:active': {
+              transform: 'translateY(0)',
+            },
+          }}
+        >
+          <RestartAltIcon fontSize="small" />
+          <Typography variant="body1" fontWeight={600}>
+            {restarting ? '重启中...' : '重启程序'}
+          </Typography>
         </Box>
       </Box>
 

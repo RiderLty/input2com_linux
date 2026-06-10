@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 )
 
 //go:embed server/build
@@ -186,6 +187,16 @@ func serve(port int) {
 			}
 		}
 
+	})
+
+	http.HandleFunc("/api/restart", func(w http.ResponseWriter, r *http.Request) {
+		logger.Infof("收到重启请求，程序将在100ms后退出")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			os.Exit(0)
+		}()
 	})
 
 	interfaces, err := net.Interfaces()

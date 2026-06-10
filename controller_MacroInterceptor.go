@@ -93,43 +93,24 @@ func configInit() {
 		},
 		{},
 	}
-	preConfigDict["手游_PKM"] = [2]map[byte]string{
-		{
-			MouseBtnLeft:    "手游_PKM",
-			MouseBtnForward: "btn_left",
-		},
-		{},
-	}
-	preConfigDict["手游_M7"] = [2]map[byte]string{
-		{
-			MouseBtnLeft:    "手游_M7",
-			MouseBtnForward: "btn_left",
-		},
-		{},
-	}
-
-	preConfigDict["PC_M7"] = [2]map[byte]string{
-		{
-			MouseBtnLeft:    "PC_M7",
-			MouseBtnForward: "btn_left",
-		},
-		{},
-	}
-
-	preConfigDict["PC_K437"] = [2]map[byte]string{
-		{
-			MouseBtnLeft:    "PC_K437",
-			MouseBtnForward: "btn_left",
-		},
-		{},
-	}
-
-	preConfigDict["PC_AUG_X5"] = [2]map[byte]string{
-		{
-			MouseBtnLeft:    "PC_AUG_X5",
-			MouseBtnForward: "btn_left",
-		},
-		{},
+	// 自动为 config/recoil/ 下的压枪脚本创建预设配置
+	recoilDir := "./config/recoil/"
+	if entries, err := os.ReadDir(recoilDir); err != nil {
+		logger.Errorf("读取压枪脚本目录失败: %v", err)
+	} else {
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".txt") {
+				continue
+			}
+			name := strings.TrimSuffix(entry.Name(), ".txt")
+			preConfigDict[name] = [2]map[byte]string{
+				{
+					MouseBtnLeft:    name,
+					MouseBtnForward: "btn_left",
+				},
+				{},
+			}
+		}
 	}
 
 	preConfigDict["测量用"] = [2]map[byte]string{
@@ -142,6 +123,7 @@ func configInit() {
 	preConfigDict["迭代测量压枪"] = [2]map[byte]string{
 		{
 			MouseBtnLeft:    "rec_down_drag_iter",
+			MouseBtnMiddle:  "clear_iter_data",
 			MouseBtnForward: "btn_left",
 			MouseBtnBack:    "downdrag_args_from_file",
 		},
@@ -260,32 +242,24 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 		},
 	}
 
-	macros["手游_PKM"] = macro{
-		Name:        "老王的PKM",
-		Description: "老王给的红点PKM 站立压枪",
-		fn:          downDragMacroFactory10ms("./config/手游_PKM.txt"),
-	}
-	macros["手游_M7"] = macro{
-		Name:        "手游_M7",
-		Description: "手游_M7 站立压枪",
-		fn:          downDragMacroFactory10ms("./config/手游_M7.txt"),
-	}
-	macros["PC_M7"] = macro{
-		Name:        "PC_M7",
-		Description: "PC_M7 站立压枪",
-		fn:          downDragMacroFactory10ms("./config/PC_M7.txt"),
-	}
-
-	macros["PC_K437"] = macro{
-		Name:        "PC_K437",
-		Description: "PC_K437 站立压枪",
-		fn:          downDragMacroFactory10ms("./config/PC_K437.txt"),
-	}
-
-	macros["PC_AUG_X5"] = macro{
-		Name:        "PC_AUG_X5",
-		Description: "PC_AUG_X5 站立压枪",
-		fn:          downDragMacroFactory10ms("./config/PC_AUG_X5.txt"),
+	// 自动读取 config/recoil/ 文件夹下所有压枪脚本
+	recoilDir := "./config/recoil/"
+	if entries, err := os.ReadDir(recoilDir); err != nil {
+		logger.Errorf("读取压枪脚本目录失败: %v", err)
+	} else {
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".txt") {
+				continue
+			}
+			name := strings.TrimSuffix(entry.Name(), ".txt")
+			path := recoilDir + entry.Name()
+			macros[name] = macro{
+				Name:        name,
+				Description: name + " 压枪脚本",
+				fn:          downDragMacroFactory10ms(path),
+			}
+			logger.Infof("加载压枪脚本: %s", name)
+		}
 	}
 
 	macros["btn_left"] = macro{
@@ -671,6 +645,17 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 					}
 				}()
 			}
+			<-ch
+		},
+	}
+
+	macros["clear_iter_data"] = macro{
+		Name:        "清空迭代压枪数据",
+		Description: "按下清空迭代录制的压枪数据，松开无操作",
+		fn: func(mk *macroMouseKeyboard, ch chan bool) {
+			mk.iterLast = nil
+			os.Remove(IterationDataFilePath)
+			logger.Infof("已清空迭代压枪数据")
 			<-ch
 		},
 	}
