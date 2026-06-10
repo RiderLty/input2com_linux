@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -69,9 +70,17 @@ func abs(x int32) int32 {
 
 func configInit() {
 	preConfigDict["清空"] = [2]map[byte]string{} // server设置的时候，都是重置然后一条一条设置。
+
+	preConfigDict["左键连发"] = [2]map[byte]string{
+		{
+			MouseBtnLeft:    "btn_left_hold_autofire",
+			MouseBtnForward: "btn_left",
+		},
+		{},
+	}
+
 	preConfigDict["弓箭自动扳机"] = [2]map[byte]string{
 		{
-			MouseBtnBack:    "ai_triger_auto",
 			MouseBtnLeft:    "ai_triger_MOUSE_LEFT",
 			MouseBtnForward: "btn_left",
 		},
@@ -141,6 +150,12 @@ func configInit() {
 	preConfigDict["Warframe"] = [2]map[byte]string{
 		{
 			MouseBtnBack: "dante_2_2_4",
+		},
+		{},
+	}
+	preConfigDict["自定义压枪"] = [2]map[byte]string{
+		{
+			MouseBtnForward: "custom_input_recoil",
 		},
 		{},
 	}
@@ -331,6 +346,81 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 					counter++
 				}
 			}
+		},
+	}
+
+	var customRecoilRunning int32
+
+	macros["custom_input_recoil"] = macro{
+		Name:        "自定义压枪",
+		Description: "从 custom_recoil_input.txt 读取数据，等待500ms后压枪",
+		fn: func(mk *macroMouseKeyboard, ch chan bool) {
+			<-ch
+			if !atomic.CompareAndSwapInt32(&customRecoilRunning, 0, 1) {
+				return
+			}
+			defer atomic.StoreInt32(&customRecoilRunning, 0)
+
+			file, err := os.Open("./config/手动设置压枪数据.txt")
+			if err != nil {
+				logger.Errorf("读取自定义压枪数据失败: %v", err)
+				return
+			}
+			defer file.Close()
+
+			var result [][2]int32
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				fields := strings.Fields(line)
+				if len(fields) != 3 {
+					continue
+				}
+				period, err1 := strconv.Atoi(fields[0])
+				dx, err2 := strconv.Atoi(fields[1])
+				dy, err3 := strconv.Atoi(fields[2])
+				if err1 != nil || err2 != nil || err3 != nil || period <= 0 {
+					continue
+				}
+				for i := 0; i < period; i++ {
+					result = append(result, [2]int32{int32(dx), int32(dy)})
+				}
+			}
+
+			if len(result) == 0 {
+				logger.Errorf("自定义压枪数据为空")
+				return
+			}
+
+			// 写入生成的标准格式文件
+			outFile, err := os.Create("./config/生成的手动设置压枪数据.txt")
+			if err == nil {
+				for _, p := range result {
+					fmt.Fprintf(outFile, "%d %d\n", p[0], p[1])
+				}
+				outFile.Close()
+			}
+
+			logger.Infof("自定义压枪: %d 步数据，等待500ms", len(result))
+			time.Sleep(500 * time.Millisecond)
+
+			mk.ctrl.MouseBtnDown(MouseBtnLeft)
+			clock := time.NewTicker(10 * time.Millisecond)
+			defer clock.Stop()
+			counter := 0
+			for {
+				<-clock.C
+				if counter >= len(result) {
+					break
+				}
+				mk.ctrl.MouseMove(result[counter][0], result[counter][1], 0)
+				counter++
+			}
+			mk.ctrl.MouseBtnUp(MouseBtnLeft)
+			logger.Infof("自定义压枪完成")
 		},
 	}
 
@@ -743,7 +833,7 @@ func (mk *macroMouseKeyboard) MouseBtnUp(keyCode byte) error {
 			mk.mouseBtnArgs[keyCode] <- true // 发送信号停止宏
 			return nil
 		}
-		return mk.ctrl.MouseBtnDown(keyCode) // 如果没有宏函数，直接调用控制器的MouseBtnDown
+		return mk.ctrl.MouseBtnUp(keyCode) // 如果没有宏函数，直接调用控制器的MouseBtnUp
 	}
 }
 

@@ -4,9 +4,11 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 )
@@ -18,6 +20,7 @@ var (
 	mouseConfigDict    = make(map[byte]string)
 	keyboardConfigDict = make(map[byte]string)
 	preConfigDict      = make(map[string][2]map[byte]string)
+	activePreConfig    string
 	mousedictMutex     sync.RWMutex
 	keyboarddictMutex  sync.RWMutex
 )
@@ -67,6 +70,53 @@ func serve(port int) {
 		}
 	})
 
+	http.HandleFunc("/api/get/active", func(w http.ResponseWriter, r *http.Request) {
+		mousedictMutex.RLock()
+		defer mousedictMutex.RUnlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"active": activePreConfig})
+	})
+
+	http.HandleFunc("/api/set/active", func(w http.ResponseWriter, r *http.Request) {
+		mousedictMutex.Lock()
+		defer mousedictMutex.Unlock()
+		activePreConfig = r.URL.Query().Get("name")
+		logger.Infof("Set active preConfig: %s", activePreConfig)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	http.HandleFunc("/api/get/recoilInput", func(w http.ResponseWriter, r *http.Request) {
+		data, err := os.ReadFile("./config/手动设置压枪数据.txt")
+		if err != nil {
+			if os.IsNotExist(err) {
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				w.Write([]byte(""))
+				return
+			}
+			http.Error(w, "Failed to read file", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write(data)
+	})
+
+	http.HandleFunc("/api/set/recoilInput", func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read body", http.StatusBadRequest)
+			return
+		}
+		err = os.WriteFile("./config/手动设置压枪数据.txt", body, 0644)
+		if err != nil {
+			http.Error(w, "Failed to write file", http.StatusInternalServerError)
+			return
+		}
+		logger.Infof("更新自定义压枪数据: %d bytes", len(body))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
 	http.HandleFunc("/api/set/mouse", func(w http.ResponseWriter, r *http.Request) {
 		mousedictMutex.Lock()
 		defer mousedictMutex.Unlock()
@@ -103,8 +153,8 @@ func serve(port int) {
 	})
 
 	http.HandleFunc("/api/set/keyboard", func(w http.ResponseWriter, r *http.Request) {
-		mousedictMutex.Lock()
-		defer mousedictMutex.Unlock()
+		keyboarddictMutex.Lock()
+		defer keyboarddictMutex.Unlock()
 		key := r.URL.Query().Get("key")
 		value := r.URL.Query().Get("value")
 		if key == "CLEAR_ALL" {
