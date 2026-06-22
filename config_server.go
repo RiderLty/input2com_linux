@@ -271,16 +271,18 @@ func serve(port int) {
 			http.Error(w, "Missing name parameter", http.StatusBadRequest)
 			return
 		}
-		// 验证配置文件存在
-		if _, err := os.Stat(filepath.Join(profilesDir, name+".yaml")); os.IsNotExist(err) {
+		data, err := os.ReadFile(filepath.Join(profilesDir, name+".yaml"))
+		if err != nil {
 			http.Error(w, "Config not found", http.StatusNotFound)
 			return
 		}
-		err := os.WriteFile("./config/using.txt", []byte(name), 0644)
-		if err != nil {
+		// 写入 using.yaml（程序读取）
+		if err := os.WriteFile("./config/using.yaml", data, 0644); err != nil {
 			http.Error(w, "Failed to apply config", http.StatusInternalServerError)
 			return
 		}
+		// 记录当前配置名
+		os.WriteFile("./config/using.txt", []byte(name), 0644)
 		logger.Infof("应用配置: %s", name)
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))

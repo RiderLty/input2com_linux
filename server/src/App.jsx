@@ -450,12 +450,12 @@ function ConfigManager() {
     setContent(text)
   }, [loadConfig])
 
-  // 列表加载后自动选择第一个
+  // 列表加载后自动选择当前使用的配置
   useEffect(() => {
     if (configs.length > 0 && !editing) {
-      selectConfig(configs[0])
+      selectConfig(activeName && configs.includes(activeName) ? activeName : configs[0])
     }
-  }, [configs, editing, selectConfig])
+  }, [configs, editing, selectConfig, activeName])
 
   // 保存
   const handleSave = useCallback(async () => {
@@ -558,14 +558,17 @@ function ConfigManager() {
                   '&:hover': { bgcolor: editing === name ? 'primary.dark' : 'action.selected' },
                 }}
               >
+                {name}
                 {activeName === name && (
                   <Box component="span" sx={{
-                    width: 6, height: 6, borderRadius: '50%',
-                    bgcolor: editing === name ? '#fff' : 'success.main',
-                    flexShrink: 0,
-                  }} />
+                    fontSize: 10, px: 0.5, py: 0.1, borderRadius: 0.8,
+                    bgcolor: editing === name ? 'rgba(255,255,255,0.25)' : 'success.main',
+                    color: editing === name ? '#fff' : '#fff',
+                    lineHeight: 1.4, flexShrink: 0,
+                  }}>
+                    使用中
+                  </Box>
                 )}
-                {name}
               </Box>
             ))}
             {/* 新建按钮 */}
