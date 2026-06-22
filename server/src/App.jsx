@@ -10,6 +10,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import AddIcon from '@mui/icons-material/Add'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import { usePreConfig, useActiveConfig, useRecoilInput, useConfigs } from './api'
+import CodeEditor from './Editor'
 
 function Tag({ label, color = 'default', sx = {} }) {
   const colors = {
@@ -427,6 +428,7 @@ function RecoilEditor() {
 
 function ConfigManager() {
   const { configs, activeName, loading, loadConfig, saveConfig, deleteConfig, applyConfig } = useConfigs()
+  const prefersDark = usePrefersDark()
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState('') // 当前编辑的配置名
   const [content, setContent] = useState('')
@@ -623,18 +625,10 @@ function ConfigManager() {
               <Typography variant="caption" sx={{ color: 'text.disabled', mb: 1, display: 'block' }}>
                 当前编辑: {editing}
               </Typography>
-              <textarea
+              <CodeEditor
                 value={content}
-                onChange={e => setContent(e.target.value)}
-                spellCheck={false}
-                style={{
-                  width: '100%', minHeight: 300,
-                  fontFamily: 'Consolas, "Courier New", monospace',
-                  fontSize: 13, lineHeight: 1.6, padding: 12,
-                  border: '1px solid #555', borderRadius: 8,
-                  resize: 'vertical', backgroundColor: 'inherit',
-                  color: 'inherit', outline: 'none', boxSizing: 'border-box',
-                }}
+                onChange={setContent}
+                dark={prefersDark}
               />
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
                 <Box onClick={() => !saving && handleSave()} sx={{
