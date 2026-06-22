@@ -36,5 +36,5 @@ dst:
   usbgadget:
     mouseFile: /dev/input/hidg0
     keyboardFile: /dev/input/hidg1
-usingMouseDst: udp
-usingKeyboardDst: udp
+usingMouseDst: makcu
+usingKeyboardDst: kcom5
