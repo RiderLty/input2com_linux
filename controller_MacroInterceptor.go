@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -50,7 +51,9 @@ type AimBotResult struct {
 type macroMouseKeyboard struct {
 	mouseBtnArgs map[byte]chan bool
 	keyArgs      map[byte]chan bool
-	ctrl         mouseKeyboard
+	activeMacro  map[byte]bool // 标记按键是否有宏正在运行
+	mouseCtrl    mouseKeyboard
+	keyboardCtrl mouseKeyboard
 	macros       map[string]macro // 存储宏函数
 	iterLock     sync.Mutex       // 迭代压枪锁
 	iterState    bool             // 迭代压枪状态
@@ -141,11 +144,18 @@ func configInit() {
 		},
 		{},
 	}
+	preConfigDict["女医发包"] = [2]map[byte]string{
+		{
+			MouseBtnForward: "burst_key4_100ms",
+		},
+		{},
+	}
 }
 
 type macro struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	toggle      bool   // true=开关模式，按下启停；false=按住模式，松开停止
 	fn          func(*macroMouseKeyboard, chan bool)
 }
 
@@ -197,15 +207,15 @@ func downDragMacroFactory10ms(path string) func(mk *macroMouseKeyboard, ch chan 
 	return func(mk *macroMouseKeyboard, ch chan bool) {
 		counter := 0
 		clock := time.NewTicker(10 * time.Millisecond)
-		mk.ctrl.MouseBtnDown(MouseBtnLeft)
+		mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 		for {
 			select {
 			case <-ch:
-				mk.ctrl.MouseBtnUp(MouseBtnLeft)
+				mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 				return
 			case <-clock.C:
 				if counter < len(result) {
-					mk.ctrl.MouseMove(result[counter][0], result[counter][1], 0)
+					mk.mouseCtrl.MouseMove(result[counter][0], result[counter][1], 0)
 				}
 				counter++
 			}
@@ -213,7 +223,7 @@ func downDragMacroFactory10ms(path string) func(mk *macroMouseKeyboard, ch chan 
 	}
 }
 
-func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeyboard {
+func NewMouseKeyboard_MacroInterceptor(mouseCtrl mouseKeyboard, keyboardCtrl mouseKeyboard) *macroMouseKeyboard {
 	configInit()
 	mouseBtnArgs := make(map[byte]chan bool)
 	keyArgs := make(map[byte]chan bool)
@@ -233,12 +243,31 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 				case <-ch:
 					return
 				default:
-					mk.ctrl.MouseBtnDown(MouseBtnLeft)
+					mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 					time.Sleep(8 * time.Millisecond)
-					mk.ctrl.MouseBtnUp(MouseBtnLeft)
+					mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 					time.Sleep(8 * time.Millisecond)
 				}
 			}
+		},
+	}
+
+	macros["burst_key4_100ms"] = macro{
+		Name:        "连按4键(开关)",
+		Description: "开关模式：100ms间隔按4键，按下30ms松开，±5ms随机延迟",
+		fn: func(mk *macroMouseKeyboard, ch chan bool) {
+			burst_key4_100ms_running := int32(1)
+			go func() {
+				for atomic.LoadInt32(&burst_key4_100ms_running) == 1 {
+					mk.keyboardCtrl.KeyDown(Key4)
+					time.Sleep(30 * time.Millisecond)
+					mk.keyboardCtrl.KeyUp(Key4)
+					delay := 95 + rand.Intn(11)
+					time.Sleep(time.Duration(delay) * time.Millisecond)
+				}
+			}()
+			<-ch
+			atomic.StoreInt32(&burst_key4_100ms_running, 0)
 		},
 	}
 
@@ -266,9 +295,9 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 		Name:        "左键",
 		Description: "普通的左键功能，用于其他按键映射",
 		fn: func(mk *macroMouseKeyboard, ch chan bool) {
-			mk.ctrl.MouseBtnDown(MouseBtnLeft)
+			mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 			<-ch
-			mk.ctrl.MouseBtnUp(MouseBtnLeft)
+			mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 		},
 	}
 
@@ -307,15 +336,15 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 			}
 			counter := 0
 			clock := time.NewTicker(10 * time.Millisecond)
-			mk.ctrl.MouseBtnDown(MouseBtnLeft)
+			mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 			for {
 				select {
 				case <-ch:
-					mk.ctrl.MouseBtnUp(MouseBtnLeft)
+					mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 					return
 				case <-clock.C:
 					if counter < len(result) {
-						mk.ctrl.MouseMove(result[counter][0], result[counter][1], 0)
+						mk.mouseCtrl.MouseMove(result[counter][0], result[counter][1], 0)
 					}
 					counter++
 				}
@@ -381,7 +410,7 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 			logger.Infof("自定义压枪: %d 步数据，等待500ms", len(result))
 			time.Sleep(500 * time.Millisecond)
 
-			mk.ctrl.MouseBtnDown(MouseBtnLeft)
+			mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 			clock := time.NewTicker(10 * time.Millisecond)
 			defer clock.Stop()
 			counter := 0
@@ -390,10 +419,10 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 				if counter >= len(result) {
 					break
 				}
-				mk.ctrl.MouseMove(result[counter][0], result[counter][1], 0)
+				mk.mouseCtrl.MouseMove(result[counter][0], result[counter][1], 0)
 				counter++
 			}
-			mk.ctrl.MouseBtnUp(MouseBtnLeft)
+			mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 			logger.Infof("自定义压枪完成")
 		},
 	}
@@ -402,21 +431,21 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 		Name:        "AI扳机",
 		Description: "AI自动扳机",
 		fn: func(mk *macroMouseKeyboard, ch chan bool) {
-			mk.ctrl.MouseBtnDown(MouseBtnLeft)
+			mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 			counter := 0
 			for {
 				select {
 				case <-ch:
-					mk.ctrl.MouseBtnUp(MouseBtnLeft)
+					mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 					return
 				default:
 					counter += 1
 					time.Sleep(time.Duration(1) * time.Millisecond)
 					if counter > 420 && mk.aimbot.width != 0 && mk.aimbot.height != 0 && float64(abs(mk.aimbot.offsetX))/float64(mk.aimbot.width) < 0.5 && float64(abs(mk.aimbot.offsetY))/float64(mk.aimbot.height) < 0.5 {
 						counter = 0
-						mk.ctrl.MouseBtnUp(MouseBtnLeft)
+						mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 						time.Sleep(time.Duration(16) * time.Millisecond)
-						mk.ctrl.MouseBtnDown(MouseBtnLeft)
+						mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 					}
 				}
 
@@ -429,7 +458,7 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 		Name:        "AI扳机测试速度",
 		Description: "点击左键一次，然后当识别变化时显示时间差",
 		fn: func(mk *macroMouseKeyboard, ch chan bool) {
-			mk.ctrl.MouseBtnDown(MouseBtnLeft)
+			mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 			old_res := fmt.Sprintf("%v", mk.aimbot)
 			start := time.Now().UnixMicro()
 			logger.Warnf("当前值%v", old_res)
@@ -443,7 +472,7 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 			}
 			time.Sleep(time.Duration(100) * time.Millisecond)
 			<-ch
-			mk.ctrl.MouseBtnUp(MouseBtnLeft)
+			mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 		},
 	}
 
@@ -457,23 +486,23 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 		fn: func(mk *macroMouseKeyboard, ch chan bool) {
 			if !runningFlag {
 				runningFlag = true
-				mk.ctrl.MouseBtnDown(MouseBtnLeft)
+				mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 				logger.Warn("开始长按左键")
 				counter := 0
 				for {
 					select {
 					case <-ch:
 					case <-switchFlasg:
-						mk.ctrl.MouseBtnUp(MouseBtnLeft)
+						mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 						return
 					case <-releaseFlag:
 						counter = 0
 						drop_move = true
 						time.Sleep(time.Duration(3) * time.Millisecond)
-						mk.ctrl.MouseBtnUp(MouseBtnLeft)
+						mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 						drop_move = false
 						time.Sleep(time.Duration(16) * time.Millisecond)
-						mk.ctrl.MouseBtnDown(MouseBtnLeft)
+						mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 						logger.Warnf("用户发射")
 					default:
 						counter += 1
@@ -482,10 +511,10 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 							counter = 0
 							drop_move = true
 							// mk.move_once_auto()
-							mk.ctrl.MouseBtnUp(MouseBtnLeft)
+							mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 							drop_move = false
 							time.Sleep(time.Duration(16) * time.Millisecond)
-							mk.ctrl.MouseBtnDown(MouseBtnLeft)
+							mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 						}
 					}
 
@@ -530,9 +559,9 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 						if counter > 300 && mk.aimbot.width != 0 && mk.aimbot.height != 0 && float64(abs(mk.aimbot.offsetX))/float64(mk.aimbot.width) < 0.5 && float64(abs(mk.aimbot.offsetY))/float64(mk.aimbot.height) < 0.5 {
 							// 逻辑 x到中心距离（udp_ints[0]）除以 识别目标的宽度（udp_ints[2]）小于0.5    且      y到中心距离（u_int[1）除以高度小于0.5  则触发
 							counter = 0
-							mk.ctrl.MouseBtnDown(MouseBtnLeft)
+							mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 							time.Sleep(time.Duration(16) * time.Millisecond)
-							mk.ctrl.MouseBtnUp(MouseBtnLeft)
+							mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 							logger.Warnf("用户发射")
 						}
 					}
@@ -592,7 +621,7 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 
 					// 5. 硬件指令下发
 					if moveX != 0 || moveY != 0 {
-						mk.ctrl.MouseMove(moveX, moveY, 0)
+						mk.mouseCtrl.MouseMove(moveX, moveY, 0)
 					}
 					lastOffsetX, lastOffsetY = currX, currY
 				}
@@ -621,23 +650,23 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 			if danteRunningFlag {
 				go func() {
 					for {
-						mk.ctrl.KeyDown(Key2)
+						mk.keyboardCtrl.KeyDown(Key2)
 						time.Sleep(10 * time.Millisecond)
-						mk.ctrl.KeyUp(Key2)
+						mk.keyboardCtrl.KeyUp(Key2)
 						time.Sleep(500 * time.Millisecond)
 						if !danteRunningFlag {
 							return
 						}
-						mk.ctrl.KeyDown(Key2)
+						mk.keyboardCtrl.KeyDown(Key2)
 						time.Sleep(10 * time.Millisecond)
-						mk.ctrl.KeyUp(Key2)
+						mk.keyboardCtrl.KeyUp(Key2)
 						time.Sleep(500 * time.Millisecond)
 						if !danteRunningFlag {
 							return
 						}
-						mk.ctrl.KeyDown(Key4)
+						mk.keyboardCtrl.KeyDown(Key4)
 						time.Sleep(10 * time.Millisecond)
-						mk.ctrl.KeyUp(Key4)
+						mk.keyboardCtrl.KeyUp(Key4)
 						time.Sleep(500 * time.Millisecond)
 						if !danteRunningFlag {
 							return
@@ -673,7 +702,7 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 			}
 			newIterData := make([][3]int32, 0, 10000)
 
-			mk.ctrl.MouseBtnDown(MouseBtnLeft)
+			mk.mouseCtrl.MouseBtnDown(MouseBtnLeft)
 			mk.iterState = true
 
 			// 2. 核心计时器：固定 10ms 心跳
@@ -693,7 +722,7 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 				// --- A. 停止信号 ---
 				case <-ch:
 					mk.iterState = false
-					mk.ctrl.MouseBtnUp(MouseBtnLeft)
+					mk.mouseCtrl.MouseBtnUp(MouseBtnLeft)
 
 					// 1. 优雅地排空剩余通道数据（非阻塞）
 				DRAIN:
@@ -726,7 +755,7 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 				// --- B. 处理用户手动修正 (实时响应) ---
 				case move := <-mk.iterChan:
 					// 1. 实时透传：保证手感无延迟
-					mk.ctrl.MouseMove(move[0], move[1], 0)
+					mk.mouseCtrl.MouseMove(move[0], move[1], 0)
 
 					// 2. 累积到当前时间片
 					userAccumX += move[0]
@@ -743,7 +772,7 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 
 					// 2. 执行旧脚本回放
 					if scriptX != 0 || scriptY != 0 {
-						mk.ctrl.MouseMove(scriptX, scriptY, 0)
+						mk.mouseCtrl.MouseMove(scriptX, scriptY, 0)
 					}
 
 					// 3. 计算新一帧的数据：新数据 = 旧脚本 + 用户修正
@@ -773,7 +802,9 @@ func NewMouseKeyboard_MacroInterceptor(controler mouseKeyboard) *macroMouseKeybo
 	return &macroMouseKeyboard{
 		mouseBtnArgs: mouseBtnArgs,
 		keyArgs:      keyArgs,
-		ctrl:         controler,
+		activeMacro:  make(map[byte]bool),
+		mouseCtrl:    mouseCtrl,
+		keyboardCtrl: keyboardCtrl,
 		macros:       macros,
 		iterLock:     sync.Mutex{},
 		iterState:    false,
@@ -790,7 +821,7 @@ func (mk *macroMouseKeyboard) MouseMove(dx, dy, Wheel int32) error {
 	} else {
 		global_moved_x += int64(dx)
 		global_moved_y += int64(dy)
-		if err := mk.ctrl.MouseMove(dx, dy, Wheel); err != nil {
+		if err := mk.mouseCtrl.MouseMove(dx, dy, Wheel); err != nil {
 			return err
 		}
 		return nil
@@ -799,33 +830,55 @@ func (mk *macroMouseKeyboard) MouseMove(dx, dy, Wheel int32) error {
 func (mk *macroMouseKeyboard) MouseBtnDown(keyCode byte) error {
 	value, ok := mouseConfigDict[keyCode]
 	if !ok { // 如果没有配置，直接调用控制器的MouseBtnDown
-		return mk.ctrl.MouseBtnDown(keyCode)
+		return mk.mouseCtrl.MouseBtnDown(keyCode)
 	} else {
 		if macroFunc, exists := mk.macros[value]; exists { // 如果有宏函数，执行宏
-			go macroFunc.fn(mk, mk.mouseBtnArgs[keyCode])
+			ch := mk.mouseBtnArgs[keyCode]
+			if mk.activeMacro[keyCode] {
+				// 宏正在运行，发送停止信号（不drain，留给宏读取）
+				select {
+				case ch <- true:
+				default:
+				}
+			} else {
+				// 启动新宏
+				// 非阻塞drain清理残留信号
+				select {
+				case <-ch:
+				default:
+				}
+				mk.activeMacro[keyCode] = true
+				go func() {
+					macroFunc.fn(mk, ch)
+					mk.activeMacro[keyCode] = false
+				}()
+			}
 			return nil
 		}
-		return mk.ctrl.MouseBtnDown(keyCode) // 如果没有宏函数，直接调用控制器的MouseBtnDown
+		return mk.mouseCtrl.MouseBtnDown(keyCode) // 如果没有宏函数，直接调用控制器的MouseBtnDown
 	}
 }
 
 func (mk *macroMouseKeyboard) MouseBtnUp(keyCode byte) error {
 	value, ok := mouseConfigDict[keyCode]
-	if !ok { // 如果没有配置，直接调用控制器的MouseBtnDown
-		return mk.ctrl.MouseBtnUp(keyCode)
+	if !ok { // 如果没有配置，直接调用控制器的MouseBtnUp
+		return mk.mouseCtrl.MouseBtnUp(keyCode)
 	} else {
 		if _, exists := mk.macros[value]; exists { // 如果有宏函数，执行宏
-			mk.mouseBtnArgs[keyCode] <- true // 发送信号停止宏
+			select {
+			case mk.mouseBtnArgs[keyCode] <- true: // 非阻塞发送停止信号
+			default: // 通道已满，跳过（toggle宏由MouseBtnDown停止）
+			}
 			return nil
 		}
-		return mk.ctrl.MouseBtnUp(keyCode) // 如果没有宏函数，直接调用控制器的MouseBtnUp
+		return mk.mouseCtrl.MouseBtnUp(keyCode) // 如果没有宏函数，直接调用控制器的MouseBtnUp
 	}
 }
 
 func (mk *macroMouseKeyboard) KeyDown(keyCode byte) error {
-	return mk.ctrl.KeyDown(Linux2hid[keyCode])
+	return mk.keyboardCtrl.KeyDown(Linux2hid[keyCode])
 }
 
 func (mk *macroMouseKeyboard) KeyUp(keyCode byte) error {
-	return mk.ctrl.KeyUp(Linux2hid[keyCode])
+	return mk.keyboardCtrl.KeyUp(Linux2hid[keyCode])
 }

@@ -1,12 +1,15 @@
-import React, { useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Box, CircularProgress, CssBaseline, Typography,
   ThemeProvider, createTheme, responsiveFontSizes,
+  Snackbar, Alert,
 } from '@mui/material'
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep'
 import EditNoteIcon from '@mui/icons-material/EditNote'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
-import { usePreConfig, useActiveConfig, useRecoilInput } from './api'
+import AddIcon from '@mui/icons-material/Add'
+import FolderOpenIcon from '@mui/icons-material/FolderOpen'
+import { usePreConfig, useActiveConfig, useRecoilInput, useConfigs } from './api'
 
 function Tag({ label, color = 'default', sx = {} }) {
   const colors = {
@@ -316,6 +319,9 @@ function ConfigPanel() {
 
       {/* 自定义压枪数据编辑器 */}
       <RecoilEditor />
+
+      {/* 配置文件管理 */}
+      <ConfigManager />
     </Box>
   )
 }
@@ -415,6 +421,261 @@ function RecoilEditor() {
           </Box>
         </Box>
       )}
+    </Box>
+  )
+}
+
+function ConfigManager() {
+  const { configs, activeName, loading, loadConfig, saveConfig, deleteConfig, applyConfig } = useConfigs()
+  const [open, setOpen] = useState(false)
+  const [editing, setEditing] = useState('') // 当前编辑的配置名
+  const [content, setContent] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState({ open: false, message: '', severity: 'success' })
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState('')
+
+  const showToast = useCallback((message, severity = 'success') => {
+    setToast({ open: true, message, severity })
+  }, [])
+  const hideToast = useCallback(() => {
+    setToast(t => ({ ...t, open: false }))
+  }, [])
+
+  // 选择配置并加载内容
+  const selectConfig = useCallback(async (name) => {
+    setEditing(name)
+    setCreating(false)
+    const text = await loadConfig(name)
+    setContent(text)
+  }, [loadConfig])
+
+  // 列表加载后自动选择第一个
+  useEffect(() => {
+    if (configs.length > 0 && !editing) {
+      selectConfig(configs[0])
+    }
+  }, [configs, editing, selectConfig])
+
+  // 保存
+  const handleSave = useCallback(async () => {
+    if (!editing) return
+    setSaving(true)
+    try {
+      const ok = await saveConfig(editing, content)
+      showToast(ok ? '已保存' : '保存失败', ok ? 'success' : 'error')
+    } finally {
+      setSaving(false)
+    }
+  }, [editing, content, saveConfig, showToast])
+
+  // 删除
+  const handleDelete = useCallback(async () => {
+    if (!editing) return
+    if (!confirm(`确定删除配置 "${editing}" ？`)) return
+    const ok = await deleteConfig(editing)
+    if (ok) {
+      setEditing('')
+      setContent('')
+      showToast('已删除')
+    }
+  }, [editing, deleteConfig, showToast])
+
+  // 应用
+  const handleApply = useCallback(async () => {
+    if (!editing) return
+    await saveConfig(editing, content)
+    const ok = await applyConfig(editing)
+    if (ok) {
+      showToast('已应用', 'info')
+    }
+  }, [editing, content, saveConfig, applyConfig, showToast])
+
+  // 新建配置
+  const handleCreate = useCallback(async () => {
+    const name = newName.trim()
+    if (!name) return
+    const ok = await saveConfig(name, content || '# 新配置\n')
+    if (ok) {
+      setEditing(name)
+      setCreating(false)
+      setNewName('')
+      showToast('已创建')
+    }
+  }, [newName, content, saveConfig, showToast])
+
+  if (loading) return null
+
+  return (
+    <Box sx={{ mt: 6 }}>
+      {/* 标题栏 */}
+      <Box
+        onClick={() => setOpen(!open)}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          cursor: 'pointer',
+          mb: open ? 2 : 0,
+          '&:hover': { opacity: 0.8 },
+        }}
+      >
+        <FolderOpenIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+        <Typography variant="body1" fontWeight={600} sx={{ color: 'text.secondary' }}>
+          配置管理
+        </Typography>
+        {activeName && (
+          <Typography variant="caption" sx={{ color: 'success.main', fontWeight: 600 }}>
+            [{activeName}]
+          </Typography>
+        )}
+        <Typography variant="caption" sx={{ color: 'text.disabled', ml: 1 }}>
+          {open ? '收起' : '展开'}
+        </Typography>
+      </Box>
+
+      {open && (
+        <Box sx={{
+          bgcolor: 'background.paper',
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 2,
+          p: 3,
+        }}>
+          {/* 配置列表 */}
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+            {configs.map(name => (
+              <Box
+                key={name}
+                onClick={() => selectConfig(name)}
+                sx={{
+                  px: 1.5, py: 0.5, borderRadius: 1.5,
+                  cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                  bgcolor: editing === name ? 'primary.main' : 'action.hover',
+                  color: editing === name ? '#fff' : 'text.secondary',
+                  transition: 'all 0.2s',
+                  display: 'flex', alignItems: 'center', gap: 0.5,
+                  '&:hover': { bgcolor: editing === name ? 'primary.dark' : 'action.selected' },
+                }}
+              >
+                {activeName === name && (
+                  <Box component="span" sx={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    bgcolor: editing === name ? '#fff' : 'success.main',
+                    flexShrink: 0,
+                  }} />
+                )}
+                {name}
+              </Box>
+            ))}
+            {/* 新建按钮 */}
+            {!creating ? (
+              <Box
+                onClick={() => { setCreating(true); setNewName(''); }}
+                sx={{
+                  px: 1.5, py: 0.5, borderRadius: 1.5,
+                  cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                  bgcolor: 'action.hover', color: 'text.secondary',
+                  display: 'flex', alignItems: 'center', gap: 0.5,
+                  '&:hover': { bgcolor: 'action.selected' },
+                }}
+              >
+                <AddIcon sx={{ fontSize: 14 }} /> 新建
+              </Box>
+            ) : (
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <input
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  placeholder="配置名称"
+                  onKeyDown={e => e.key === 'Enter' && handleCreate()}
+                  style={{
+                    width: 120, fontSize: 13, padding: '4px 8px',
+                    border: '1px solid #555', borderRadius: 6,
+                    backgroundColor: 'inherit', color: 'inherit',
+                    outline: 'none',
+                  }}
+                />
+                <Box onClick={handleCreate} sx={{
+                  px: 1.5, py: 0.5, borderRadius: 1.5, cursor: 'pointer',
+                  fontSize: 13, fontWeight: 600, bgcolor: 'primary.main', color: '#fff',
+                  '&:hover': { bgcolor: 'primary.dark' },
+                }}>
+                  确定
+                </Box>
+                <Box onClick={() => setCreating(false)} sx={{
+                  px: 1, py: 0.5, borderRadius: 1.5, cursor: 'pointer',
+                  fontSize: 13, color: 'text.secondary',
+                  '&:hover': { bgcolor: 'action.hover' },
+                }}>
+                  取消
+                </Box>
+              </Box>
+            )}
+          </Box>
+
+          {/* 编辑器 */}
+          {editing && (
+            <>
+              <Typography variant="caption" sx={{ color: 'text.disabled', mb: 1, display: 'block' }}>
+                当前编辑: {editing}
+              </Typography>
+              <textarea
+                value={content}
+                onChange={e => setContent(e.target.value)}
+                spellCheck={false}
+                style={{
+                  width: '100%', minHeight: 300,
+                  fontFamily: 'Consolas, "Courier New", monospace',
+                  fontSize: 13, lineHeight: 1.6, padding: 12,
+                  border: '1px solid #555', borderRadius: 8,
+                  resize: 'vertical', backgroundColor: 'inherit',
+                  color: 'inherit', outline: 'none', boxSizing: 'border-box',
+                }}
+              />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
+                <Box onClick={() => !saving && handleSave()} sx={{
+                  px: 3, py: 1, borderRadius: 2,
+                  cursor: saving ? 'wait' : 'pointer',
+                  bgcolor: 'primary.main', color: '#fff',
+                  fontWeight: 600, fontSize: 14, transition: 'all 0.2s',
+                  opacity: saving ? 0.6 : 1,
+                  '&:hover': { bgcolor: saving ? undefined : 'primary.dark' },
+                }}>
+                  {saving ? '保存中...' : '保存'}
+                </Box>
+                <Box onClick={handleApply} sx={{
+                  px: 3, py: 1, borderRadius: 2, cursor: 'pointer',
+                  bgcolor: 'secondary.main', color: '#fff',
+                  fontWeight: 600, fontSize: 14, transition: 'all 0.2s',
+                  '&:hover': { bgcolor: 'secondary.dark' },
+                }}>
+                  应用
+                </Box>
+                <Box onClick={handleDelete} sx={{
+                  px: 3, py: 1, borderRadius: 2, cursor: 'pointer',
+                  border: 1, borderColor: 'error.main', color: 'error.main',
+                  fontWeight: 600, fontSize: 14, transition: 'all 0.2s',
+                  '&:hover': { bgcolor: 'rgba(211,47,47,0.06)' },
+                }}>
+                  删除
+                </Box>
+              </Box>
+            </>
+          )}
+        </Box>
+      )}
+
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={3000}
+        onClose={hideToast}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={hideToast} severity={toast.severity} variant="filled" sx={{ width: '100%' }}>
+          {toast.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

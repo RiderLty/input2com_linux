@@ -9,7 +9,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -187,6 +190,126 @@ func serve(port int) {
 			}
 		}
 
+	})
+
+	// 配置文件管理 API
+	profilesDir := "./config/profiles"
+	os.MkdirAll(profilesDir, 0755)
+
+	http.HandleFunc("/api/get/configs", func(w http.ResponseWriter, r *http.Request) {
+		entries, err := os.ReadDir(profilesDir)
+		if err != nil {
+			http.Error(w, "Failed to read profiles directory", http.StatusInternalServerError)
+			return
+		}
+		var names []string
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".yaml") {
+				names = append(names, strings.TrimSuffix(e.Name(), ".yaml"))
+			}
+		}
+		sort.Strings(names)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(names)
+	})
+
+	http.HandleFunc("/api/get/config", func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "Missing name parameter", http.StatusBadRequest)
+			return
+		}
+		data, err := os.ReadFile(filepath.Join(profilesDir, name+".yaml"))
+		if err != nil {
+			http.Error(w, "Failed to read config", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write(data)
+	})
+
+	http.HandleFunc("/api/set/config", func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "Missing name parameter", http.StatusBadRequest)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read body", http.StatusBadRequest)
+			return
+		}
+		err = os.WriteFile(filepath.Join(profilesDir, name+".yaml"), body, 0644)
+		if err != nil {
+			http.Error(w, "Failed to write config", http.StatusInternalServerError)
+			return
+		}
+		logger.Infof("保存配置: %s", name)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	http.HandleFunc("/api/delete/config", func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "Missing name parameter", http.StatusBadRequest)
+			return
+		}
+		err := os.Remove(filepath.Join(profilesDir, name+".yaml"))
+		if err != nil {
+			http.Error(w, "Failed to delete config", http.StatusInternalServerError)
+			return
+		}
+		logger.Infof("删除配置: %s", name)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	http.HandleFunc("/api/apply/config", func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "Missing name parameter", http.StatusBadRequest)
+			return
+		}
+		// 验证配置文件存在
+		if _, err := os.Stat(filepath.Join(profilesDir, name+".yaml")); os.IsNotExist(err) {
+			http.Error(w, "Config not found", http.StatusNotFound)
+			return
+		}
+		err := os.WriteFile("./config/using.txt", []byte(name), 0644)
+		if err != nil {
+			http.Error(w, "Failed to apply config", http.StatusInternalServerError)
+			return
+		}
+		logger.Infof("应用配置: %s", name)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+
+	http.HandleFunc("/api/get/activeConfig", func(w http.ResponseWriter, r *http.Request) {
+		nameBytes, err := os.ReadFile("./config/using.txt")
+		if err != nil {
+			http.Error(w, "Failed to read active config name", http.StatusInternalServerError)
+			return
+		}
+		name := strings.TrimSpace(string(nameBytes))
+		data, err := os.ReadFile(filepath.Join(profilesDir, name+".yaml"))
+		if err != nil {
+			http.Error(w, "Failed to read active config", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write(data)
+	})
+
+	http.HandleFunc("/api/get/activeConfigName", func(w http.ResponseWriter, r *http.Request) {
+		nameBytes, err := os.ReadFile("./config/using.txt")
+		if err != nil {
+			http.Error(w, "Failed to read active config name", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Write([]byte(strings.TrimSpace(string(nameBytes))))
 	})
 
 	http.HandleFunc("/api/restart", func(w http.ResponseWriter, r *http.Request) {

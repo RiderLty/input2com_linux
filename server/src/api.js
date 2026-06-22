@@ -64,3 +64,58 @@ export function useRecoilInput() {
 
   return { content, setContent, save, saving, saved, loading }
 }
+
+export function useConfigs() {
+  const [configs, setConfigs] = useState([])
+  const [activeContent, setActiveContent] = useState('')
+  const [activeName, setActiveName] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  const refresh = useCallback(() => {
+    setLoading(true)
+    Promise.all([
+      fetch('/api/get/configs').then(r => r.json()),
+      fetch('/api/get/activeConfig').then(r => r.text()),
+      fetch('/api/get/activeConfigName').then(r => r.text()),
+    ]).then(([names, content, name]) => {
+      setConfigs(names || [])
+      setActiveContent(content)
+      setActiveName(name || '')
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const loadConfig = useCallback(async (name) => {
+    const resp = await fetch(`/api/get/config?name=${encodeURIComponent(name)}`)
+    return resp.text()
+  }, [])
+
+  const saveConfig = useCallback(async (name, content) => {
+    const resp = await fetch(`/api/set/config?name=${encodeURIComponent(name)}`, {
+      method: 'POST',
+      body: content,
+    })
+    if (resp.ok) refresh()
+    return resp.ok
+  }, [refresh])
+
+  const deleteConfig = useCallback(async (name) => {
+    const resp = await fetch(`/api/delete/config?name=${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    })
+    if (resp.ok) refresh()
+    return resp.ok
+  }, [refresh])
+
+  const applyConfig = useCallback(async (name) => {
+    const resp = await fetch(`/api/apply/config?name=${encodeURIComponent(name)}`, {
+      method: 'POST',
+    })
+    if (resp.ok) refresh()
+    return resp.ok
+  }, [refresh])
+
+  return { configs, activeContent, activeName, loading, refresh, loadConfig, saveConfig, deleteConfig, applyConfig }
+}
