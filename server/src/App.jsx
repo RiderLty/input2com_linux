@@ -489,7 +489,7 @@ function ConfigManager() {
     await saveConfig(editing, content)
     const ok = await applyConfig(editing)
     if (ok) {
-      showToast('已应用', 'info')
+      showToast('已设置，重启以应用', 'info')
     }
   }, [editing, content, saveConfig, applyConfig, showToast])
 
